@@ -18,6 +18,7 @@
 
 #include "tools.h"
 #include "local_planning_alg.h"
+#include "message_utils.h"
 
 using namespace std;
 

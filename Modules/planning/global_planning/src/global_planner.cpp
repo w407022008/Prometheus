@@ -419,11 +419,10 @@ void Global_Planner::track_path_cb(const ros::TimerEvent& e)
             curr_pos[1] = _DroneState.position[1];
             curr_pos[2] = _DroneState.position[2];
 
-            float sign_ = (Eigen::Vector3d(1.0,0.0,0.0).cross(ref_vel))[2];
-            float next_desired_yaw_vel      = sign(sign_) * acos(Eigen::Vector3d(1.0,0.0,0.0).dot(ref_vel));
+            float next_desired_yaw_vel      = sign(ref_vel(1)) * acos(ref_vel(0) / ref_vel.norm());
 
-            sign_ = (Eigen::Vector3d(1.0,0.0,0.0).cross(ref_pos - curr_pos))[2];
-            float next_desired_yaw_pos      = sign(sign_) * acos(Eigen::Vector3d(1.0,0.0,0.0).dot(ref_pos - curr_pos));
+            Eigen::Vector3d diff_pos = ref_pos - curr_pos;
+            float next_desired_yaw_pos      = sign(diff_pos(1)) * acos(diff_pos(0) / diff_pos.norm());
 
 
             desired_yaw = (0.2*desired_yaw + 0.4*next_desired_yaw_pos + 0.4*next_desired_yaw_vel );

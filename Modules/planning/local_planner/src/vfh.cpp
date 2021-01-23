@@ -1,5 +1,7 @@
 #include "vfh.h"
+#include "string.h"
 #include "math.h"
+#include "iostream"
 
 namespace Local_Planning
 {
@@ -86,7 +88,10 @@ int VFH::compute_force(Eigen::Vector3d  &goal, Eigen::Vector3d &desired_vel)
     Eigen::Vector3d uav2goal = goal - current_pos;
 
 
-
+    auto sign=[](double v)->double
+    {
+        return v<0.0? -1.0:1.0;
+    };
 
 
     // 排斥力
@@ -118,42 +123,41 @@ int VFH::compute_force(Eigen::Vector3d  &goal, Eigen::Vector3d &desired_vel)
         if(dist_push > sensor_max_range || isnan(dist_push))
             continue;
 
+
         double obs_dist = uav2obs.norm();
-        double obs_angle = atan2(uav2obs(1), uav2obs(0));
+        if (fabs(uav2obs(2))>0.5) continue;
+        uav2obs(2) = 0.0;
+        double obs_angle = sign(uav2obs(1)) * acos(uav2obs(0) / uav2obs.norm());
         double angle_range;
         if(obs_dist>inflate_and_safe_distance)
         {
             angle_range = asin(inflate_and_safe_distance/obs_dist);
         }else if (obs_dist<=inflate_and_safe_distance)
         {
-            angle_range = M_PI;
+            angle_range = M_PI/2;
             safe_cnt++;  // 非常危险
         }
 
-        double obstacle_cost = obstacle_weight / (1/inflate_distance - 1/obs_dist);
+        double obstacle_cost = obstacle_weight / (1/inflate_distance - 1/(inflate_distance>obs_dist ? inflate_distance+1e-3 : obs_dist) );
         generate_voxel_data(obs_angle, angle_range, obstacle_cost);
 
         obstacles.push_back(p3d);
     }
 
 
-
-
-
-
     // 与目标点相关cost计算
     // 不考虑高度影响
-    uav2goal(2) = 0.0;
     double dist_att = uav2goal.norm();
-    double goal_heading = atan2(uav2goal(1), uav2goal(0));
-    
+    uav2goal(2) = 0.0;
+    double goal_heading = sign(uav2goal(1)) * acos(uav2goal(0)/uav2goal.norm());
+    string s;
     for(int i=0; i<Hcnt; i++)
     {
         // Hdata;
         // angle_i 为当前角度
         double angle_i = find_angle(i);
 
-        double angle_er = angle_error(angle_i, goal_heading);
+        double angle_er = angle_error(angle_i, goal_heading); // angle_i in 0 ~ 2pi; heading in -pi ~ pi
         float goal_gain;
         if(dist_att>3.0) 
         {
@@ -170,33 +174,30 @@ int VFH::compute_force(Eigen::Vector3d  &goal, Eigen::Vector3d &desired_vel)
         Hdata[i] += goalWeight * angle_er * goal_gain;
     }
 
-
-
     // 与当前速度相关cost计算
     // 不考虑高度影响
-    float vel_gain = current_vel.norm();
-    double current_heading = atan2(current_vel(1), current_vel(0));
-    
-    for(int i=0; i<Hcnt; i++)
-    {
-        // Hdata;
-        // angle_i 为当前角度
-        double angle_i = find_angle(i);
+//    double vel_gain = current_vel.norm();
+//    current_vel(2) = 0.0;
+//    double current_heading = sign(current_vel(1)) *acos(current_vel(0)/current_vel.norm());
+//    
+//    for(int i=0; i<Hcnt; i++)
+//    {
+//        // Hdata;
+//        // angle_i 为当前角度
+//        double angle_i = find_angle(i);
 
-        double angle_er = angle_error(angle_i, current_heading);
-        if(vel_gain>3.0) 
-        {
-            vel_gain = 3.0;
-        }
-        else if(vel_gain<0.5) 
-        {
-            vel_gain = 0.5;
-        } 
-        // 当前角度与目标角度差的越多,则该代价越大
-        Hdata[i] += goalWeight * angle_er * vel_gain;
-    }
-
-
+//        double angle_er = angle_error(angle_i, current_heading); // angle_i in 0 ~ 2pi; heading in -pi ~ pi
+//        if(vel_gain>3.0) 
+//        {
+//            vel_gain = 3.0;
+//        }
+//        else if(vel_gain<0.5) 
+//        {
+//            vel_gain = 0.5;
+//        } 
+//        // 当前角度与目标角度差的越多,则该代价越大
+//        Hdata[i] += goalWeight * angle_er * vel_gain;
+//    }
 
 
     // 寻找cost最小的路径
@@ -227,6 +228,7 @@ int VFH::compute_force(Eigen::Vector3d  &goal, Eigen::Vector3d &desired_vel)
         printf("APF calculate take %f [s].\n",   (ros::Time::now()-begin_collision).toSec()/exec_num);
         exec_num=0;
     }  
+    
 
     return local_planner_state;
 }
@@ -245,8 +247,10 @@ int VFH::find_optimization_path(void)
     return bset_ind;
 }
 
+// angle_cen: -pi ~ pi; angle_range: 0~pi/2
 void VFH::generate_voxel_data(double angle_cen, double angle_range, double val)  // set the map obstacle into the H data
 {
+	angle_cen = angle_cen<0 ? angle_cen+2*M_PI : angle_cen; // 0 ~ 2pi
     double angle_max = angle_cen + angle_range;
     double angle_min = angle_cen - angle_range;
     int cnt_min = find_Hcnt(angle_min);
@@ -255,13 +259,13 @@ void VFH::generate_voxel_data(double angle_cen, double angle_range, double val) 
     {
         for(int i=cnt_min; i<Hcnt; i++)
         {
-            Hdata[i] =+ val;
+            Hdata[i] += val;
         }
         for(int i=0;i<cnt_max; i++)
         {
             Hdata[i] +=val;
         }
-    }else if(cnt_max>=cnt_min)
+    }else
     {
         for(int i=cnt_min; i<=cnt_max; i++)
         {
@@ -271,14 +275,9 @@ void VFH::generate_voxel_data(double angle_cen, double angle_range, double val) 
      
 }
 
-// angle: deg
+// angle: deg within -pi/2 ~ 5/2*pi
 int VFH::find_Hcnt(double angle){
-    if(angle<0){
-        angle += 2 * M_PI;
-    }
-    if(angle>2*M_PI){
-        angle -=2*M_PI;
-    }
+	angle = angle<0 ? angle+2*M_PI : angle>2*M_PI ? angle-2*M_PI : angle; // 0 ~ 2pi
     int cnt = floor(angle/Hres);
     return cnt;
 }
@@ -288,19 +287,13 @@ double VFH::find_angle(int cnt){
     return angle;
 }
 
+// angle_1 in 0 ~ 2pi; angle_2 in -pi ~ pi
 double VFH::angle_error(double angle1, double angle2){
+	angle2 = angle2<0 ? angle2+2*M_PI : angle2;
     double angle_er = angle1 - angle2;
-    while(angle_er>M_PI){
-        angle_er = angle_er - 2*M_PI;
-    }
-
-    while (angle_er<-M_PI)
-    {
-        angle_er = angle_er + 2*M_PI;
-    }
     angle_er = fabs(angle_er);
-    return angle_er;
-
+    
+    return angle_er>M_PI ? 2*M_PI-angle_er : angle_er;
 }
 
 }

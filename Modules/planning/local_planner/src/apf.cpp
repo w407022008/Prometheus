@@ -129,7 +129,7 @@ int APF::compute_force(Eigen::Vector3d &goal, Eigen::Vector3d &desired_vel)
         
 
         obstacles.push_back(p3d);
-        double push_gain = k_push * (1/dist_push - 1/sensor_max_range)* 1.0/(dist_push * dist_push);
+        double push_gain = k_push * (1/dist_push - 1/sensor_max_range)* 1.0/(1/inflate_distance - 1/(inflate_distance>dist_push ? inflate_distance+1e-3 : dist_push) );
 
         if(dist_att<1.0)
         {

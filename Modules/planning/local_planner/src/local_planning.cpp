@@ -232,20 +232,20 @@ void Local_Planner::laserscanCallback(const sensor_msgs::LaserScanConstPtr &msg)
 
     _pointcloud.clear();
     pcl::PointXYZ newPoint;
-    Eigen::Vector3f _laser_point_body_frame,_laser_point_ENU_frame;
+    Eigen::Vector3f _laser_point_body_body_frame,_laser_point_body_ENU_frame;
     double newPointAngle;
 
     int beamNum = _laser_scan->ranges.size();
     for (int i = 0; i < beamNum; i++)
     {
         newPointAngle = _laser_scan->angle_min + _laser_scan->angle_increment * i;
-        _laser_point_body_frame[0] = _laser_scan->ranges[i] * cos(newPointAngle);
-        _laser_point_body_frame[1] = _laser_scan->ranges[i] * sin(newPointAngle);
-        _laser_point_body_frame[2] = 0.0;
-        _laser_point_ENU_frame = R_Body_to_ENU * _laser_point_body_frame;
-        newPoint.x = _DroneState.position[0] + _laser_point_body_frame[0];
-        newPoint.y = _DroneState.position[1] + _laser_point_body_frame[1];
-        newPoint.z = _DroneState.position[2] + _laser_point_body_frame[2];
+        _laser_point_body_body_frame[0] = _laser_scan->ranges[i] * cos(newPointAngle);
+        _laser_point_body_body_frame[1] = _laser_scan->ranges[i] * sin(newPointAngle);
+        _laser_point_body_body_frame[2] = 0.0;
+        _laser_point_body_ENU_frame = R_Body_to_ENU * _laser_point_body_body_frame;
+        newPoint.x = _DroneState.position[0] + _laser_point_body_ENU_frame[0];
+        newPoint.y = _DroneState.position[1] + _laser_point_body_ENU_frame[1];
+        newPoint.z = _DroneState.position[2] + _laser_point_body_ENU_frame[2];
         
         _pointcloud.push_back(newPoint);
     }
@@ -333,8 +333,7 @@ void Local_Planner::control_cb(const ros::TimerEvent& e)
         ref_vel[0] = desired_vel[0];
         ref_vel[1] = desired_vel[1];
         ref_vel[2] = desired_vel[2];
-        float sign_ = (Eigen::Vector3d(1.0,0.0,0.0).cross(ref_vel))[2];
-        float next_desired_yaw_vel = sign(sign_) * acos(Eigen::Vector3d(1.0,0.0,0.0).dot(ref_vel));
+        float next_desired_yaw_vel = sign(ref_vel(1)) * acos(ref_vel(0) / ref_vel.norm());
 
         // 根据速度大小决定是否更新期望偏航角， 更新采用平滑滤波的方式，系数可调
         if( sqrt( ref_vel[1]* ref_vel[1] + ref_vel[0]* ref_vel[0])  >  0.1  )
