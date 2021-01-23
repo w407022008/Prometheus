@@ -31,6 +31,7 @@ private:
     //　参数
     double inflate_distance;
     double sensor_max_range;
+    double max_planning_vel;
     double max_att_dist;
     double k_push;
     double k_att;
@@ -42,8 +43,10 @@ private:
     bool has_odom_;
     bool is_2D;
     
-    Eigen::Vector3d push_force;
+    double obs_angle;
+    Eigen::Vector3d repulsive_force;
     Eigen::Vector3d attractive_force;
+    Eigen::Vector3d guid_force;
 
     pcl::PointCloud<pcl::PointXYZ> latest_local_pcl_;
     sensor_msgs::PointCloud2ConstPtr  local_map_ptr_;

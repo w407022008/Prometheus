@@ -336,11 +336,11 @@ void Local_Planner::control_cb(const ros::TimerEvent& e)
         float next_desired_yaw_vel = sign(ref_vel(1)) * acos(ref_vel(0) / ref_vel.norm());
 
         // 根据速度大小决定是否更新期望偏航角， 更新采用平滑滤波的方式，系数可调
-        if( sqrt( ref_vel[1]* ref_vel[1] + ref_vel[0]* ref_vel[0])  >  0.1  )
+        if( sqrt( ref_vel[1]* ref_vel[1] + ref_vel[0]* ref_vel[0])  >  0.05  )
         {
-            desired_yaw = (0.7*desired_yaw + 0.3*next_desired_yaw_vel );
+            desired_yaw = (0.8*desired_yaw + 0.2*next_desired_yaw_vel );
         } else {
-            desired_yaw = (0.3*desired_yaw + 0.7*next_desired_yaw_vel );
+            desired_yaw = (0.2*desired_yaw + 0.8*next_desired_yaw_vel );
         }
     }else
     {

@@ -8,7 +8,7 @@
 	<arg name="visualization" default="true"/>
 	<arg name="pcd_file" value="$(find prometheus_gazebo)/maps/obstacle.pcd" />
 	<arg name="model" default="amov_solo"/>
-	<arg name="is_2DLidar" default="true"/>
+	<arg name="is_2DLidar" default="false"/>
 	<arg name="octomap_denied" default="false"/> <!-- 3d 必须 false  -->
 	<arg name="type_in_goal" default="false"/>
 
@@ -80,9 +80,9 @@
 		<!-- 膨胀参数，一般设置为无人机的半径或更大 -->
 		<param name="local_planner/inflate_distance" value="0.8" type="double"/>
 		<!-- 感知距离，只考虑感知距离内的障碍物 -->
-		<param name="local_planner/sensor_max_range" value="2.0" type="double"/>  
+		<param name="local_planner/sensor_max_range" value="4.0" type="double"/>  
 		<!-- 增益 -->
-		<param name="apf/k_push" value="2.0" type="double"/>
+		<param name="apf/k_push" value="1.0" type="double"/>
 		<param name="apf/k_att" value="1.0" type="double"/>
 		<!-- 最大吸引距离 -->
 		<param name="apf/max_att_dist" value="4" type="double"/>

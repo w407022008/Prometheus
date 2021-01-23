@@ -4,12 +4,27 @@
 namespace Local_Planning
 {
 Eigen::Vector3d last_desired_vel;
+    	        
+auto min=[](double v1, double v2)->double
+{
+    return v1<v2 ? v1 : v2;
+};    	        
+auto max=[](double v1, double v2)->double
+{
+    return v1<v2 ? v1 : v2;
+};
+auto sign=[](double v)->double
+{
+	return v<0.0? -1.0:1.0;
+};
+
 void APF::init(ros::NodeHandle& nh)
 {
     has_local_map_ = false;
 
     nh.param("local_planner/inflate_distance", inflate_distance, 0.20);  // 最小障碍物距离
     nh.param("local_planner/sensor_max_range", sensor_max_range, 2.5);  // 感知障碍物距离
+    nh.param("local_planner/max_planning_vel", max_planning_vel, 0.5); // 最大飞行速度
     nh.param("apf/k_push", k_push, 0.8);                         // 推力增益
     nh.param("apf/k_att", k_att, 0.4);                                  // 引力增益
     nh.param("apf/max_att_dist", max_att_dist, 5.0);             // 最大吸引距离
@@ -19,6 +34,8 @@ void APF::init(ros::NodeHandle& nh)
 
     // TRUE代表2D平面规划及搜索,FALSE代表3D 
     nh.param("local_planner/is_2D", is_2D, true); 
+    
+    sensor_max_range = max(sensor_max_range,3*inflate_distance);
 }
 
 void APF::set_local_map(sensor_msgs::PointCloud2ConstPtr &local_map_ptr)
@@ -72,7 +89,6 @@ int APF::compute_force(Eigen::Vector3d &goal, Eigen::Vector3d &desired_vel)
     // 引力
     Eigen::Vector3d uav2goal = goal - current_pos;
     // 不考虑高度影响
-    uav2goal(2) = 0.0;
     double dist_att = uav2goal.norm();
     if(dist_att > max_att_dist)
     {
@@ -83,9 +99,8 @@ int APF::compute_force(Eigen::Vector3d &goal, Eigen::Vector3d &desired_vel)
 
     // 排斥力
     double uav_height = cur_odom_.pose.pose.position.z;
-    push_force = Eigen::Vector3d(0.0, 0.0, 0.0);
-    Eigen::Vector3d max_push_force;
-    Eigen::Vector3d push_tan;
+    repulsive_force = Eigen::Vector3d(0.0, 0.0, 0.0);
+    guid_force = Eigen::Vector3d(0.0, 0.0, 0.0);
     int count;
 
     Eigen::Vector3d p3d;
@@ -105,12 +120,15 @@ int APF::compute_force(Eigen::Vector3d &goal, Eigen::Vector3d &desired_vel)
         if(fabs(p3d(2))<ground_height)
             continue;
 
-        //　超出最大感知距离，则不考虑该点的排斥力
+        //　超出感知范围，则不考虑该点的排斥力
         double dist_push = (uav2obs).norm();
-        if(dist_push > sensor_max_range || isnan(dist_push))
-            continue;
 
-
+		
+    	obs_angle = acos(uav2obs.dot(current_vel) / uav2obs.norm() / current_vel_norm);
+        if(isnan(dist_push) || (dist_push > min(3*inflate_distance,sensor_max_range/2) && obs_angle > M_PI/6)){
+        	continue;            
+		}
+		
         // 如果当前的观测点中，包含小于安全停止距离的点，进行计数
         if(dist_push < safe_distance+inflate_distance)
         {
@@ -126,41 +144,46 @@ int APF::compute_force(Eigen::Vector3d &goal, Eigen::Vector3d &desired_vel)
                 return 2;  //成功规划，但是飞机不安全
             }
         }
-        
 
         obstacles.push_back(p3d);
-        double push_gain = k_push * (1/dist_push - 1/sensor_max_range)* 1.0/(1/inflate_distance - 1/(inflate_distance>dist_push ? inflate_distance+1e-3 : dist_push) );
+        double push_gain = k_push * (1/(max(inflate_distance,dist_push) - inflate_distance + 1e-6) - 1/(sensor_max_range-inflate_distance));
 
         if(dist_att<1.0)
         {
             push_gain *= dist_att;  // to gaurantee to reach the goal.
         }
 
-            push_force += push_gain * (-uav2obs)/dist_push;
-
-        
+		if(dist_push < min(3*inflate_distance,sensor_max_range/2)){
+            repulsive_force += push_gain * (-uav2obs)/dist_push;
+			count ++;
+		}
+		if (obs_angle < M_PI/6)
+			guid_force += current_vel.cross((-uav2obs).cross(current_vel)) / pow(current_vel_norm,2);
     }
 
     //　平均排斥力
-    if(obstacles.size() != 0)
+    if(count != 0)
     {
-        push_force=push_force/obstacles.size();
+        repulsive_force=repulsive_force/count; //obstacles.size();
     }
 
 
     // 地面排斥力
     if (current_pos[2] <ground_safe_height)
-	push_force += Eigen::Vector3d(0.0, 0.0, 1.0) * k_push / (1/ground_safe_height - 1/current_pos[2]);
+		repulsive_force += Eigen::Vector3d(0.0, 0.0, 1.0) * k_push * (1/(max(ground_safe_height,current_pos[2]) - ground_safe_height + 1e-6) - 1/(2*ground_safe_height));
 
     // 合力
-    desired_vel = 0.5*last_desired_vel + 0.5*(push_force + attractive_force); // ENU frame
-    last_desired_vel = desired_vel;
+    desired_vel = 0.4*repulsive_force + 0.4*attractive_force + 1.2*(guid_force.norm()>0.0? k_push*guid_force/guid_force.norm() : Eigen::Vector3d(0.0,0.0,0.0)); // ENU frame
 
     if(is_2D)
-    {
         desired_vel[2] = 0.0;
-    }
 
+	if(max_planning_vel<desired_vel.norm())
+		desired_vel = desired_vel/desired_vel.norm()*max_planning_vel;
+		
+	desired_vel = 0.5*last_desired_vel + 0.5*desired_vel;
+    last_desired_vel = desired_vel;
+    
     local_planner_state =1;  //成功规划， 安全
 
     static int exec_num=0;

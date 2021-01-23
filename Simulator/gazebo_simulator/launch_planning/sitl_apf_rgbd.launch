@@ -5,8 +5,8 @@
 	<arg name="z" default="0"/>
 	<arg name="gazebo_gui" default="false"/>
 	<arg name="visualization" default="true"/>
-	<arg name="setup_rtabmap" default="true" />
-	<arg name="depth_mode" default="false"/>
+	<arg name="setup_rtabmap" default="false" /> <!-- rtabmap 获取不到视觉信息 -->
+	<arg name="depth_mode" default="true"/>
 
 	<arg name="world" default="$(find prometheus_gazebo)/worlds/obstacle.world"/>
 	<arg name="sdf" default="$(find prometheus_gazebo)/amov_models/amov_solo_D435i/amov_solo_D435i.sdf"/>
@@ -87,7 +87,7 @@
 		<param name="local_planner/planner_enable" value="true" type="bool"/>
 		<!-- 二维平面规划 -->
 		<param name="global_planner/is_2D" value="false" type="bool"/>
-		<param name="local_planner/control_yaw_flag" value="$(arg is_2DLidar)" type="bool"/>
+		<param name="local_planner/control_yaw_flag" value="true" type="bool"/>
 		<!-- 选择算法 0代表APF,1代表VFH -->
 		<param name="local_planner/algorithm_mode" value="0" type="int"/>
 		<!-- 激光雷达模型,0代表3d雷达类型<sensor_msgs::PointCloud2>,1代表2d雷达类型<sensor_msgs::LaserScan> -->
@@ -97,9 +97,9 @@
 		<!-- 膨胀参数，一般设置为无人机的半径或更大 -->
 		<param name="apf/inflate_distance" value="0.8" type="double"/>
 		<!-- 感知距离，只考虑感知距离内的障碍物 -->
-		<param name="apf/sensor_max_range" value="3.0" type="double"/>  
+		<param name="apf/sensor_max_range" value="4.0" type="double"/>  
 		<!-- 增益 -->
-		<param name="apf/k_push" value="2.0" type="double"/>
+		<param name="apf/k_push" value="1.0" type="double"/>
 		<param name="apf/k_att" value="1.0" type="double"/>
 		<!-- 最大吸引距离 -->
 		<param name="apf/max_att_dist" value="4" type="double"/>
