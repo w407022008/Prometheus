@@ -46,7 +46,7 @@ private:
 
     double limit_v_norm;
 
-    double* Hdata;
+    double* Cost_hist;
     double  Hres;
     int Hcnt;  // 直方图个数
 
@@ -70,7 +70,7 @@ public:
 
     VFH(){}
     ~VFH(){
-        delete Hdata;
+        delete Cost_hist;
     }
 
     typedef shared_ptr<VFH> Ptr;

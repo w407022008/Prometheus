@@ -30,7 +30,7 @@
 using namespace std;
 #define NODE_NAME "Local_Planner [main]"
 
-#define MIN_DIS 0.1
+#define MIN_DIS 0.3
 
 namespace Local_Planning
 {
@@ -50,6 +50,7 @@ private:
     bool is_2D;
     bool control_yaw_flag;
     double max_planning_vel;
+    double inflate_distance;
     double fly_height_2D;
     double safe_distance;
     bool sim_mode;
@@ -116,7 +117,7 @@ private:
     void goal_cb(const geometry_msgs::PoseStampedConstPtr& msg);
     void drone_state_cb(const prometheus_msgs::DroneStateConstPtr &msg);
     void localcloudCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
-    void laserscanCallback(const sensor_msgs::LaserScanConstPtr &msg);
+    void Callback_2dlaserscan(const sensor_msgs::LaserScanConstPtr &msg);
     void mainloop_cb(const ros::TimerEvent& e);
     void control_cb(const ros::TimerEvent& e);
 

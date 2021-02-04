@@ -8,8 +8,8 @@
 	<arg name="visualization" default="true"/>
 	<arg name="pcd_file" value="$(find prometheus_gazebo)/maps/obstacle.pcd" />
 	<arg name="model" default="amov_solo"/>
-	<arg name="is_2DLidar" default="true"/>
-	<arg name="octomap_denied" default="true"/> <!-- 3d 必须 false -->
+	<arg name="is_2DLidar" default="false"/>
+	<arg name="octomap_denied" default="false"/> <!-- 3d 必须 false -->
 	<arg name="type_in_goal" default="false"/>
 
 	<group if="$(arg is_2DLidar)">
@@ -62,7 +62,7 @@
 	<!-- 启动局部规划算法 -->
 	<node pkg="prometheus_local_planning" name="local_planner_main" type="local_planner_main" output="screen" launch-prefix="gnome-terminal --tab --">	
 		<remap unless="$(arg octomap_denied)" from="/prometheus/planning/local_pcl" to="/octomap_point_cloud_centers" />
-		<remap if="$(arg octomap_denied)" from="/prometheus/planning/local_pcl" to="/prometheus/sensors/2Dlidar_scan" /> <!-- 3D lidar 一定要激活octomap -->
+		<remap if="$(arg octomap_denied)" from="/prometheus/planning/local_pcl" to="/prometheus/sensors/2Dlidar_scan" /> <!-- 3D lidar 一定要激活octomap把数据从body映射到world -->
 		<!-- 参数 -->
 		<param name="local_planner/sim_mode" value="true" type="bool"/>
 		<param name="local_planner/planner_enable" value="true" type="bool"/>
@@ -76,11 +76,11 @@
 		<param name="local_planner/is_2D" value="$(arg octomap_denied)" type="bool"/>
 		<param name="local_planner/fly_height_2D" value="1.0" type="double"/> <!-- 如果是二维的话有效 -->
 		<!-- 最大速度，设的越小越安全 -->
-		<param name="local_planner/max_planning_vel" value="0.5" type="double"/>
+		<param name="local_planner/max_planning_vel" value="1.0" type="double"/>
 		<!-- 膨胀参数，一般设置为无人机的半径或更大 -->
 		<param name="local_planner/inflate_distance" value="0.8" type="double"/>
 		<!-- 感知距离，只考虑感知距离内的障碍物 -->
-		<param name="local_planner/sensor_max_range" value="2.0" type="double"/>    
+		<param name="local_planner/sensor_max_range" value="10.0" type="double"/>    
 		<!-- weight -->
 		<param name="vfh/obstacle_weight" value="10.0" type="double"/>
 		<param name="vfh/goalWeight" value="0.1" type="double"/>
@@ -95,7 +95,7 @@
 
 	<!-- 启动rviz,设为false可关闭 -->
 	<group if="$(arg visualization)">
-		<node type="rviz" name="rviz" pkg="rviz" args="-d $(find prometheus_gazebo)/config/rviz_config/rviz_planning.rviz" />
+		<node type="rviz" name="rviz" pkg="rviz" args="-d $(find prometheus_gazebo)/config/rviz_config/rviz_local_planning.rviz" />
 		<!-- obstacle.world 真实点云 -->
 		<node pkg="prometheus_slam" type="pc2_publisher_node" name="pc2_publisher_node" output="screen">	
 			<param name="pcd_path" type="string" value="$(arg pcd_file)" />

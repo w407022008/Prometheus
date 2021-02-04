@@ -409,23 +409,36 @@ void Global_Planner::track_path_cb(const ros::TimerEvent& e)
             ref_vel[1] = _DroneState.velocity[1];
             ref_vel[2] = _DroneState.velocity[2];
 
-            Eigen::Vector3d ref_pos;
-            ref_pos[0] = path_cmd.poses[i].pose.position.x;
-            ref_pos[1] = path_cmd.poses[i].pose.position.y;
-            ref_pos[2] = path_cmd.poses[i].pose.position.z;
+//            Eigen::Vector3d ref_pos;
+//            ref_pos[0] = path_cmd.poses[i].pose.position.x;
+//            ref_pos[1] = path_cmd.poses[i].pose.position.y;
+//            ref_pos[2] = path_cmd.poses[i].pose.position.z;
 
-            Eigen::Vector3d curr_pos;
-            curr_pos[0] = _DroneState.position[0];
-            curr_pos[1] = _DroneState.position[1];
-            curr_pos[2] = _DroneState.position[2];
+//            Eigen::Vector3d curr_pos;
+//            curr_pos[0] = _DroneState.position[0];
+//            curr_pos[1] = _DroneState.position[1];
+//            curr_pos[2] = _DroneState.position[2];
 
-            float next_desired_yaw_vel      = sign(ref_vel(1)) * acos(ref_vel(0) / ref_vel.norm());
+//            float next_desired_yaw_vel      = sign(ref_vel(1)) * acos(ref_vel(0) / ref_vel.norm());
 
-            Eigen::Vector3d diff_pos = ref_pos - curr_pos;
-            float next_desired_yaw_pos      = sign(diff_pos(1)) * acos(diff_pos(0) / diff_pos.norm());
+//            Eigen::Vector3d diff_pos = ref_pos - curr_pos;
+//            float next_desired_yaw_pos      = sign(diff_pos(1)) * acos(diff_pos(0) / diff_pos.norm());
 
 
-            desired_yaw = (0.2*desired_yaw + 0.4*next_desired_yaw_pos + 0.4*next_desired_yaw_vel );
+		    if( sqrt( ref_vel[1]* ref_vel[1] + ref_vel[0]* ref_vel[0])  >  0.05  )
+		    {
+		    	float next_desired_yaw_vel = sign(ref_vel(1)) * acos(ref_vel(0) / ref_vel.norm());
+		        if (fabs(desired_yaw-next_desired_yaw_vel)<M_PI)
+		        	desired_yaw = (0.3*desired_yaw + 0.7*next_desired_yaw_vel);
+		        else
+		        	desired_yaw = 2*next_desired_yaw_vel-(0.3*desired_yaw + 0.7*next_desired_yaw_vel);
+		    } else {
+		        desired_yaw = desired_yaw + 0.05;
+		    }
+			if(desired_yaw>M_PI)
+				desired_yaw -= 2*M_PI;
+			else if (desired_yaw<-M_PI)
+				desired_yaw += 2*M_PI;
         }
     }else
     {

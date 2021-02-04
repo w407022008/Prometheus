@@ -8,6 +8,7 @@ namespace Local_Planning
 void Local_Planner::init(ros::NodeHandle& nh)
 {
     // 参数读取
+    nh.param("local_planner/inflate_distance", inflate_distance, 0.20);  // 最小障碍物距离
     // 规划器使能
     nh.param("local_planner/planner_enable", planner_enable_default, false);
     // 根据参数 planning/algorithm_mode 选择局部避障算法: [0]: APF,[1]: VFH
@@ -42,7 +43,7 @@ void Local_Planner::init(ros::NodeHandle& nh)
         local_point_clound_sub = nh.subscribe<sensor_msgs::PointCloud2>("/prometheus/planning/local_pcl", 1, &Local_Planner::localcloudCallback, this);
     }else if (lidar_model == 1)
     {
-        local_point_clound_sub = nh.subscribe<sensor_msgs::LaserScan>("/prometheus/planning/local_pcl", 1, &Local_Planner::laserscanCallback, this);
+        local_point_clound_sub = nh.subscribe<sensor_msgs::LaserScan>("/prometheus/planning/local_pcl", 1, &Local_Planner::Callback_2dlaserscan, this);
     }
 
     // 发布 期望速度
@@ -146,7 +147,10 @@ void Local_Planner::goal_cb(const geometry_msgs::PoseStampedConstPtr& msg)
         goal_pos << msg->pose.position.x, msg->pose.position.y, fly_height_2D;
     }else
     {
-        goal_pos << msg->pose.position.x, msg->pose.position.y, msg->pose.position.z;
+    	if(msg->pose.position.z<1)
+        	goal_pos << msg->pose.position.x, msg->pose.position.y, 1.0;
+        else
+        	goal_pos << msg->pose.position.x, msg->pose.position.y, msg->pose.position.z;
     }
 
     goal_ready = true;
@@ -214,7 +218,7 @@ void Local_Planner::drone_state_cb(const prometheus_msgs::DroneStateConstPtr& ms
 }
 
 
-void Local_Planner::laserscanCallback(const sensor_msgs::LaserScanConstPtr &msg)
+void Local_Planner::Callback_2dlaserscan(const sensor_msgs::LaserScanConstPtr &msg)
 {
     /* need odom_ for center radius sensing */
     if (!odom_ready) 
@@ -238,6 +242,7 @@ void Local_Planner::laserscanCallback(const sensor_msgs::LaserScanConstPtr &msg)
     int beamNum = _laser_scan->ranges.size();
     for (int i = 0; i < beamNum; i++)
     {
+    	if(_laser_scan->ranges[i] < inflate_distance) continue;
         newPointAngle = _laser_scan->angle_min + _laser_scan->angle_increment * i;
         _laser_point_body_body_frame[0] = _laser_scan->ranges[i] * cos(newPointAngle);
         _laser_point_body_body_frame[1] = _laser_scan->ranges[i] * sin(newPointAngle);
@@ -276,12 +281,26 @@ void Local_Planner::localcloudCallback(const sensor_msgs::PointCloud2ConstPtr &m
 
 void Local_Planner::control_cb(const ros::TimerEvent& e)
 {
-    if(!path_ok || !planner_enable_default)
-    {
+	if (!path_ok || !planner_enable_default){
+		if (control_yaw_flag){
+			Command_Now.header.stamp                        = ros::Time::now();
+			Command_Now.Mode                                = prometheus_msgs::ControlCommand::Move;
+			Command_Now.Command_ID                          = Command_Now.Command_ID + 1;
+			Command_Now.source                              = NODE_NAME;
+			Command_Now.Reference_State.Move_mode           = prometheus_msgs::PositionReference::XY_VEL_Z_POS;
+			Command_Now.Reference_State.Move_frame          = prometheus_msgs::PositionReference::ENU_FRAME;
+		    Command_Now.Reference_State.position_ref[2]     = _DroneState.position[2];
+			Command_Now.Reference_State.velocity_ref[0]     = 0.0;
+			Command_Now.Reference_State.velocity_ref[1]     = 0.0;
+			
+			desired_yaw = desired_yaw + 0.05;
+			Command_Now.Reference_State.yaw_ref             = desired_yaw;
+		    command_pub.publish(Command_Now);
+		}
         return;
-    }
+	}
 
-    distance_to_goal = (start_pos - goal_pos).norm();
+    distance_to_goal = Eigen::Vector3d((start_pos - goal_pos)[0],(start_pos - goal_pos)[1],0.0).norm();
 
     // 抵达终点
     if(distance_to_goal < MIN_DIS)
@@ -298,7 +317,8 @@ void Local_Planner::control_cb(const ros::TimerEvent& e)
 
         Command_Now.Reference_State.yaw_ref             = desired_yaw;
         command_pub.publish(Command_Now);
-        if (planner_enable_default)
+        
+        if (!planner_enable_default)
             pub_message(message_pub, prometheus_msgs::Message::WARN, NODE_NAME, "Reach the goal! The planner will be disable automatically.");
         else
             pub_message(message_pub, prometheus_msgs::Message::NORMAL, NODE_NAME, "Reach the goal! The planner is still enable.");
@@ -311,16 +331,29 @@ void Local_Planner::control_cb(const ros::TimerEvent& e)
         return;
     }
 
-    // 目前仅支持定高飞行
-    Command_Now.header.stamp                        = ros::Time::now();
-    Command_Now.Mode                                = prometheus_msgs::ControlCommand::Move;
-    Command_Now.Command_ID                          = Command_Now.Command_ID + 1;
-    Command_Now.source = NODE_NAME;
-    Command_Now.Reference_State.Move_mode           = prometheus_msgs::PositionReference::XY_VEL_Z_POS;
-    Command_Now.Reference_State.Move_frame          = prometheus_msgs::PositionReference::ENU_FRAME;
-    Command_Now.Reference_State.velocity_ref[0]     = desired_vel[0];
-    Command_Now.Reference_State.velocity_ref[1]     = desired_vel[1];
-    Command_Now.Reference_State.position_ref[2]     = fly_height_2D;
+    if (is_2D)
+    {
+		Command_Now.header.stamp                        = ros::Time::now();
+		Command_Now.Mode                                = prometheus_msgs::ControlCommand::Move;
+		Command_Now.Command_ID                          = Command_Now.Command_ID + 1;
+		Command_Now.source                              = NODE_NAME;
+		Command_Now.Reference_State.Move_mode           = prometheus_msgs::PositionReference::XY_VEL_Z_POS;
+		Command_Now.Reference_State.Move_frame          = prometheus_msgs::PositionReference::ENU_FRAME;
+		Command_Now.Reference_State.velocity_ref[0]     = desired_vel[0];
+		Command_Now.Reference_State.velocity_ref[1]     = desired_vel[1];
+		Command_Now.Reference_State.position_ref[2]     = fly_height_2D;
+    }else{
+		Command_Now.header.stamp                        = ros::Time::now();
+		Command_Now.Mode                                = prometheus_msgs::ControlCommand::Move;
+		Command_Now.Command_ID                          = Command_Now.Command_ID + 1;
+		Command_Now.source                              = NODE_NAME;
+		Command_Now.Reference_State.Move_mode           = prometheus_msgs::PositionReference::XYZ_VEL;
+		Command_Now.Reference_State.Move_frame          = prometheus_msgs::PositionReference::ENU_FRAME;
+		Command_Now.Reference_State.velocity_ref[0]     = desired_vel[0];
+		Command_Now.Reference_State.velocity_ref[1]     = desired_vel[1];
+		Command_Now.Reference_State.velocity_ref[2]     = desired_vel[2];
+    }
+		
 
     // 更新期望偏航角
     if (control_yaw_flag)
@@ -332,16 +365,23 @@ void Local_Planner::control_cb(const ros::TimerEvent& e)
         Eigen::Vector3d ref_vel;
         ref_vel[0] = desired_vel[0];
         ref_vel[1] = desired_vel[1];
-        ref_vel[2] = desired_vel[2];
-        float next_desired_yaw_vel = sign(ref_vel(1)) * acos(ref_vel(0) / ref_vel.norm());
+        //ref_vel[2] = desired_vel[2];
 
-        // 根据速度大小决定是否更新期望偏航角， 更新采用平滑滤波的方式，系数可调
         if( sqrt( ref_vel[1]* ref_vel[1] + ref_vel[0]* ref_vel[0])  >  0.05  )
         {
-            desired_yaw = (0.8*desired_yaw + 0.2*next_desired_yaw_vel );
+        	float next_desired_yaw_vel = sign(ref_vel(1)) * acos(ref_vel(0) / ref_vel.norm());
+            if (fabs(desired_yaw-next_desired_yaw_vel)<M_PI)
+            	desired_yaw = (0.3*desired_yaw + 0.7*next_desired_yaw_vel);
+            else
+            	desired_yaw = 2*next_desired_yaw_vel-(0.3*desired_yaw + 0.7*next_desired_yaw_vel);
         } else {
-            desired_yaw = (0.2*desired_yaw + 0.8*next_desired_yaw_vel );
+            desired_yaw = desired_yaw + 0.05;
         }
+    	if(desired_yaw>M_PI)
+    		desired_yaw -= 2*M_PI;
+    	else if (desired_yaw<-M_PI)
+    		desired_yaw += 2*M_PI;
+    		
     }else
     {
         desired_yaw = 0.0;

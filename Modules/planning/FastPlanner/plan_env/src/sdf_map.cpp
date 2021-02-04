@@ -1,7 +1,6 @@
 #include "plan_env/sdf_map.h"
 
 
-
 namespace dyn_planner {
     SDFMap::SDFMap(Eigen::Vector3d ori, double resolution, Eigen::Vector3d size) {
         this->origin_ = ori;
@@ -342,7 +341,7 @@ namespace dyn_planner {
                 fillESDF([&](int x) { return tmp_buffer2_[x * grid_size_(1) * grid_size_(2) + y * grid_size_(2) + z]; },
                          [&](int x, double val) {
                              distance_buffer_[x * grid_size_(1) * grid_size_(2) + y * grid_size_(2) + z] =
-                                     resolution_sdf_ * std::sqrt(val);
+                                     resolution_sdf_ * std::sqrt(val); // sqrt? yes!
                          },
                          min_vec_[0], max_vec_[0], 0);
             }
@@ -488,7 +487,6 @@ namespace dyn_planner {
         new_map_ = true;
     }
 
-
     void SDFMap::odomCallback(const nav_msgs::OdometryConstPtr &msg) {
         if (msg->child_frame_id == "X" || msg->child_frame_id == "O")
             return;
@@ -538,6 +536,7 @@ namespace dyn_planner {
                 for (int x = -ifn; x <= ifn; ++x)
                     for (int y = -ifn; y <= ifn; ++y)
                         for (int z = -ifn; z <= ifn; ++z) {
+                        	if(fabs(x)!=ifn && fabs(y)!=ifn && fabs(z)!=ifn) continue;
                             p3d_inf(0) = pt_inf.x = pt.x + x * resolution_sdf_;
                             p3d_inf(1) = pt_inf.y = pt.y + y * resolution_sdf_;
                             p3d_inf(2) = pt_inf.z = pt.z + 0.5 * z * resolution_sdf_;
@@ -587,7 +586,7 @@ namespace dyn_planner {
 
         node_.param("sdf_map/resolution_sdf", resolution_sdf_, 0.2);
         node_.param("sdf_map/ceil_height", ceil_height_, 2.0);
-        node_.param("sdf_map/update_rate", update_rate_, 10.0); // useless
+        node_.param("sdf_map/update_rate", update_rate_, 10.0);
         node_.param("sdf_map/update_range", update_range_, 5.0);
         node_.param("sdf_map/inflate", inflate_, 0.2);
         node_.param("sdf_map/radius_ignore", radius_ignore_, 0.2); // useless
@@ -598,12 +597,12 @@ namespace dyn_planner {
 
         /* ---------- sub and pub ---------- */
         odom_sub_ = node_.subscribe<nav_msgs::Odometry>("/prometheus/drone_odom", 10, &SDFMap::odomCallback, this);
-        octomap_sub_ = node_.subscribe<octomap_msgs::Octomap>("/prometheus/planning/local_pcl", 1, &SDFMap::octomapCallback, this);
+        octomap_sub_ = node_.subscribe<octomap_msgs::Octomap>("/prometheus/planning/local_octomap", 1, &SDFMap::octomapCallback, this);
 
         cloud_sub_ = node_.subscribe<sensor_msgs::PointCloud2>("/prometheus/planning/local_pointclouds", 1, &SDFMap::cloudCallback,
                                                                this);
 
-        update_timer_ = node_.createTimer(ros::Duration(0.1), &SDFMap::updateCallback, this);
+        update_timer_ = node_.createTimer(ros::Duration(1.0/update_rate_), &SDFMap::updateCallback, this);
 
         inflate_cloud_pub_ = node_.advertise<sensor_msgs::PointCloud2>("/prometheus/sdf_map/inflate_cloud", 1);
 

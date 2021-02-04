@@ -140,12 +140,12 @@ void bsplineCallback(prometheus_plan_manage::BsplineConstPtr msg) {
   receive_traj = true;
 }
 
-// 【订阅】replan出现的话，更新时间，在0.25s后或轨迹运行完后轨迹发布停止
+// 【订阅】replan出现的话，更新时间，在0.01s后或轨迹运行完后轨迹发布停止
 void replanCallback(std_msgs::Empty msg) {
   /* reset duration */
-  const double time_out = 0.25;
+  const double time_out = 0.01;
   ros::Time time_now = ros::Time::now();
-  double t_stop = (time_now - time_traj_start).toSec() + time_out;  //在0.25s后停止发布轨迹
+  double t_stop = (time_now - time_traj_start).toSec() + time_out;  //在0.01s后停止发布轨迹
   traj_duration = min(t_stop, traj_duration);
   t_cmd_end = t_cmd_start + traj_duration;
 }

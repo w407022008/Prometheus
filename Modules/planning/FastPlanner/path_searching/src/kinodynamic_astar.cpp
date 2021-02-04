@@ -220,8 +220,8 @@ cout << "[Kino Astar]: Reach horizon_" << endl;
         if (is_occ)
         {
 #ifdef DEBUG
-          printf("A star pos: [%f,  %f,  %f]\n", pos(0), pos(1), pos(2));
-          cout << "collision" << endl;
+//          printf("A star pos: [%f,  %f,  %f]\n", pos(0), pos(1), pos(2));
+//          cout << "collision" << endl;
 #endif      
           continue;
         }

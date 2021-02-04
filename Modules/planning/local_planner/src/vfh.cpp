@@ -24,10 +24,10 @@ void VFH::init(ros::NodeHandle& nh)
     inflate_and_safe_distance = safe_distance + inflate_distance;
     
     Hres = 2*M_PI/Hcnt;
-    Hdata = new double[Hcnt]();
+    Cost_hist = new double[Hcnt]();
     for(int i(0); i<Hcnt; i++)
     {
-        Hdata[i] =0.0;       
+        Cost_hist[i] =0.0;       
     }
 }
 
@@ -69,10 +69,10 @@ int VFH::compute_force(Eigen::Vector3d  &goal, Eigen::Vector3d &desired_vel)
     if (isnan(goal(0)) || isnan(goal(1)) || isnan(goal(2)))
         return 0;
 
-    // clear the Hdata
+    // clear the Cost_hist
     for(int i =0; i<Hcnt; i++)
     {
-        Hdata[i]=0;
+        Cost_hist[i]=0;
     }
 
     // 状态量
@@ -153,7 +153,6 @@ int VFH::compute_force(Eigen::Vector3d  &goal, Eigen::Vector3d &desired_vel)
     string s;
     for(int i=0; i<Hcnt; i++)
     {
-        // Hdata;
         // angle_i 为当前角度
         double angle_i = find_angle(i);
 
@@ -171,33 +170,24 @@ int VFH::compute_force(Eigen::Vector3d  &goal, Eigen::Vector3d &desired_vel)
             goal_gain = dist_att;
         }
         // 当前角度与目标角度差的越多,则该代价越大
-        Hdata[i] += goalWeight * angle_er * goal_gain;
+        Cost_hist[i] += goalWeight * angle_er * goal_gain;
     }
 
     // 与当前速度相关cost计算
     // 不考虑高度影响
-//    double vel_gain = current_vel.norm();
-//    current_vel(2) = 0.0;
-//    double current_heading = sign(current_vel(1)) *acos(current_vel(0)/current_vel.norm());
-//    
-//    for(int i=0; i<Hcnt; i++)
-//    {
-//        // Hdata;
-//        // angle_i 为当前角度
-//        double angle_i = find_angle(i);
+    current_vel(2) = 0.0;
+    double current_norm = current_vel.norm();
+    double current_heading = sign(current_vel(1)) *acos(current_vel(0)/current_norm);
+    
+    for(int i=0; i<Hcnt; i++)
+    {
+        // angle_i 为当前角度
+        double angle_i = find_angle(i);
 
-//        double angle_er = angle_error(angle_i, current_heading); // angle_i in 0 ~ 2pi; heading in -pi ~ pi
-//        if(vel_gain>3.0) 
-//        {
-//            vel_gain = 3.0;
-//        }
-//        else if(vel_gain<0.5) 
-//        {
-//            vel_gain = 0.5;
-//        } 
-//        // 当前角度与目标角度差的越多,则该代价越大
-//        Hdata[i] += goalWeight * angle_er * vel_gain;
-//    }
+        double angle_er = angle_error(angle_i, current_heading); // angle_i in 0 ~ 2pi; heading in -pi ~ pi
+        // 当前角度与目标角度差的越多,则该代价越大
+        Cost_hist[i] += goalWeight * angle_er * 0.5;
+    }
 
 
     // 寻找cost最小的路径
@@ -223,9 +213,9 @@ int VFH::compute_force(Eigen::Vector3d  &goal, Eigen::Vector3d &desired_vel)
     exec_num++;
 
     // 此处改为根据循环时间计算的数值
-    if(exec_num == 50)
+    if(exec_num == 10)
     {
-        printf("APF calculate take %f [s].\n",   (ros::Time::now()-begin_collision).toSec()/exec_num);
+        printf("VFH calculate take %f [s].\n",   (ros::Time::now()-begin_collision).toSec());
         exec_num=0;
     }  
     
@@ -239,8 +229,8 @@ int VFH::find_optimization_path(void)
     int bset_ind = 10000;
     double best_cost = 100000;
     for(int i=0; i<Hcnt; i++){
-        if(Hdata[i]<best_cost){
-            best_cost = Hdata[i];
+        if(Cost_hist[i]<best_cost){
+            best_cost = Cost_hist[i];
             bset_ind = i;
         }
     }
@@ -259,17 +249,17 @@ void VFH::generate_voxel_data(double angle_cen, double angle_range, double val) 
     {
         for(int i=cnt_min; i<Hcnt; i++)
         {
-            Hdata[i] += val;
+            Cost_hist[i] += val;
         }
         for(int i=0;i<cnt_max; i++)
         {
-            Hdata[i] +=val;
+            Cost_hist[i] +=val;
         }
     }else
     {
         for(int i=cnt_min; i<=cnt_max; i++)
         {
-            Hdata[i] += val;
+            Cost_hist[i] += val;
         }
     }
      

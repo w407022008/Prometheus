@@ -79,6 +79,8 @@ private:
   double thresh_no_replan_, thresh_replan_;
   double waypoints_[10][3];
   int wp_num_;
+  int waypoint_seq;
+  bool flag_new_goal=false;
 
   /* ---------- planning api ---------- */
   Eigen::Vector3d start_pt_, start_vel_, start_acc_, end_pt_, end_vel_;
@@ -100,8 +102,8 @@ private:
   // 目标和切换开关订阅
   ros::Subscriber waypoint_sub_, swith_sub;
 
-  // 重规划、B样条、安全状态发布
-  ros::Publisher replan_pub_, bspline_pub_, safety_pub_;
+  // 重规划、B样条、安全状态、新目标发布
+  ros::Publisher replan_pub_, bspline_pub_, safety_pub_, goalpoint_pub_;
 
   void execFSMCallback(const ros::TimerEvent& e);
   void safetyCallback(const ros::TimerEvent& e);

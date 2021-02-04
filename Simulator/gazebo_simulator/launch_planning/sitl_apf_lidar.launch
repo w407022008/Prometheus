@@ -82,7 +82,7 @@
 		<!-- 感知距离，只考虑感知距离内的障碍物 -->
 		<param name="local_planner/sensor_max_range" value="4.0" type="double"/>  
 		<!-- 增益 -->
-		<param name="apf/k_push" value="1.0" type="double"/>
+		<param name="apf/k_push" value="2.0" type="double"/>
 		<param name="apf/k_att" value="1.0" type="double"/>
 		<!-- 最大吸引距离 -->
 		<param name="apf/max_att_dist" value="4" type="double"/>
@@ -100,7 +100,7 @@
 
 	<!-- 启动rviz,设为false可关闭 -->
 	<group if="$(arg visualization)">
-		<node type="rviz" name="rviz" pkg="rviz" args="-d $(find prometheus_gazebo)/config/rviz_config/rviz_planning.rviz" />
+		<node type="rviz" name="rviz" pkg="rviz" args="-d $(find prometheus_gazebo)/config/rviz_config/rviz_local_planning.rviz" />
 		<!-- obstacle.world 真实点云 -->
 		<node pkg="prometheus_slam" type="pc2_publisher_node" name="pc2_publisher_node" output="screen">	
 			<param name="pcd_path" type="string" value="$(arg pcd_file)" />

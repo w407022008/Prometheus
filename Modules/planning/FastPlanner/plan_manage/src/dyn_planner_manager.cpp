@@ -45,8 +45,9 @@ bool DynPlannerManager::checkTrajCollision()
     double dist = dynamic_ ? edt_env_->evaluateCoarseEDT(pos, time_start_ + t - t_start_) :
                              edt_env_->evaluateCoarseEDT(pos, -1.0); // time useless
 
-    if (dist < margin_)
+    if ((dist < margin_)||(t==t_end_ && dist < 2*margin_))
     {
+      cout << "current traj in collision at time step: " << (t-t_start_)/0.02 << endl;
       return false;
     }
   }
@@ -102,7 +103,7 @@ cout << "Close goal" << endl;
 
   ros::Time start_time, end_time;
   start_time = ros::Time::now();
-
+  time_traj_start_ = ros::Time::now();
 
   /* ---------- search kino path ---------- */
   // 全局规划算法清零
@@ -168,7 +169,7 @@ cout << "Close goal" << endl;
 
   // cout << "ctrl pts:" << control_pts << endl;
 
-  NonUniformBspline init = NonUniformBspline(control_pts, 3, ts);// 优化前拟合路径
+  // NonUniformBspline init = NonUniformBspline(control_pts, 3, ts);// 优化前拟合路径
 
   end_time = ros::Time::now();
   t_axb = (end_time - start_time).toSec();// 样本点拟合时间
@@ -206,21 +207,21 @@ cout << "Close goal" << endl;
   bool feasible = pos.checkFeasibility(false, ts);
 
   int iter_num = 0;
-  while (!feasible && ros::ok())
-  {
-    ++iter_num;
+//  while (!feasible && ros::ok())
+//  {
+//    ++iter_num;
 
-    feasible = pos.reallocateTime(false, ts);
-    /* actually this not needed, converges within 10 iteration */
-    if (iter_num >= 50)
-      break;
-  }
+//    feasible = pos.reallocateTime(false, ts);
+//    /* actually this not needed, converges within 10 iteration */
+//    if (iter_num >= 50)
+//      break;
+//  }
 
   // cout << "[Main]: iter num: " << iter_num << endl;
   pos.getTimeSpan(tm, tmp);
   tn = tmp - tm;
 
-  // cout << "[planner]: Reallocate ratio: " << tn / to << endl;
+  cout << "[planner]: Reallocate ratio: " << tn / to << endl;
 
   end_time = ros::Time::now();
   t_adjust = (end_time - start_time).toSec();// 运动动力学可行性修正时间
@@ -242,7 +243,7 @@ cout << "Close goal" << endl;
   time_adjust_ = t_adjust;
 
 
-  time_traj_start_ = ros::Time::now();
+//  time_traj_start_ = ros::Time::now();
   // time_start_ = -1.0;
 
   return true;

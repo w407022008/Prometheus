@@ -26,8 +26,9 @@ void BsplineOptimizer::setParam(ros::NodeHandle& nh)
   nh.param("optimization/lamda3", lamda3_, -1.0);
   nh.param("optimization/lamda4", lamda4_, -1.0);
   nh.param("optimization/lamda5", lamda5_, -1.0);
-  nh.param("optimization/dist0", dist0_, -1.0);
-  nh.param("optimization/dist1", dist1_, -1.0); // useless
+  nh.param("optimization/dist0", dist0_, -1.0); // closer than this would be attached importance
+  nh.param("optimization/dist1", dist1_, -1.0); // farther than this would be ignored
+  nh.param("optimization/ratio_limit", ratio_limit, 2.0);
   nh.param("optimization/max_vel", max_vel_, -1.0);
   nh.param("optimization/max_acc", max_acc_, -1.0);
   nh.param("optimization/max_iteration_num", max_iteration_num_, -1);
@@ -38,6 +39,7 @@ void BsplineOptimizer::setParam(ros::NodeHandle& nh)
   std::cout << "lamda2: " << lamda2_ << std::endl;
   std::cout << "lamda3: " << lamda3_ << std::endl;
   std::cout << "lamda4: " << lamda4_ << std::endl;
+  std::cout << "lamda5: " << lamda5_ << std::endl;
 }
 
 void BsplineOptimizer::setBSplineInterval(double ts)
@@ -146,6 +148,25 @@ void BsplineOptimizer::optimize(int end_cons, bool dynamic, double time_start)
   }
 }
 
+void BsplineOptimizer::calcTensileCost(const vector<Eigen::Vector3d>& q, double& cost,
+                                          vector<Eigen::Vector3d>& gradient)
+{
+  cost = 0.0;
+  std::fill(gradient.begin(), gradient.end(), Eigen::Vector3d(0, 0, 0));
+  
+  int end_idx = end_constrain_ == SOFT_CONSTRAINT ? q.size() - 1 : q.size() - order_;
+  int num_contol_poly_edge = end_constrain_ == SOFT_CONSTRAINT ? q.size() - order_ : q.size() - 2*order_+1;
+  
+  for (int i = order_; i < end_idx; i++) // ignoring the start point and the end point on the trajectory
+  {
+	Eigen::Vector3d qd = (q[i] - q[i+1]) / num_contol_poly_edge;
+    cost += qd.squaredNorm();
+  
+    gradient[i] += 2 * qd * (1) / num_contol_poly_edge;
+    gradient[i+1] += 2 * qd * (-1) / num_contol_poly_edge;
+  }
+}
+
 void BsplineOptimizer::calcSmoothnessCost(const vector<Eigen::Vector3d>& q, double& cost,
                                           vector<Eigen::Vector3d>& gradient)
 {
@@ -181,22 +202,38 @@ void BsplineOptimizer::calcDistanceCost(const vector<Eigen::Vector3d>& q, double
   //   cout << q[i].transpose() << endl;
   // }
 
-  int end_idx = end_constrain_ == SOFT_CONSTRAINT ? q.size() : q.size() - order_;
+  int end_idx = end_constrain_ == SOFT_CONSTRAINT ? q.size() - 1 : q.size() - order_ + 1;
 
-  for (int i = order_; i < end_idx; i++)
+  for (int i = order_; i < end_idx; i++) // ignoring the start point and the end point on the trajectory
   {
+  	Eigen::Vector3d pos_ = 1/6*(q[i-1] + 4*q[i] + q[i+1]);
     if (!dynamic_)
     {
-      edt_env_->evaluateEDTWithGrad(q[i], -1.0, dist, dist_grad);
+      edt_env_->evaluateEDTWithGrad(pos_, -1.0, dist, dist_grad);
     }
     else
     {
       double time = double(i + 2 - order_) * bspline_interval_ + time_traj_start_;// useless
-      edt_env_->evaluateEDTWithGrad(q[i], time, dist, dist_grad);
+      edt_env_->evaluateEDTWithGrad(pos_, time, dist, dist_grad);
     }
 
-    cost += dist < dist0_ ? pow(dist - dist0_, 2) : 0.0;
-    gradient[i] += dist < dist0_ ? 2.0 * (dist - dist0_) * dist_grad : g_zero;
+	if (dist < dist1_){
+		if (dist < dist0_){
+			double ratio = dist0_ / dist;
+			ratio = ratio>ratio_limit ? ratio_limit : ratio;
+			cost += pow(dist - dist1_, 2) * ratio;
+			gradient[i-1] += 2.0 * ratio * (dist - dist1_) * 1 / 6 * dist_grad;
+			gradient[i] += 2.0 * ratio * (dist - dist1_) * 2 / 3 * dist_grad;
+			gradient[i+1] += 2.0 * ratio * (dist - dist1_) * 1 / 6 * dist_grad;
+			
+		} else {
+			cost += pow(dist - dist1_, 2);
+			gradient[i-1] += 2.0 * (dist - dist1_) * 1 / 6 * dist_grad;
+			gradient[i] += 2.0 * (dist - dist1_) * 2 / 3 * dist_grad;
+			gradient[i+1] += 2.0 * (dist - dist1_) * 1 / 6 * dist_grad;
+		}
+	}
+    
   }
 }
 
@@ -304,14 +341,16 @@ void BsplineOptimizer::combineCost(const std::vector<double>& x, std::vector<dou
   }
 
   /* ---------- evaluate cost and gradient ---------- */
-  double f_smoothness, f_distance, f_feasibility, f_endpoint;
+  double f_tensile, f_smoothness, f_distance, f_feasibility, f_endpoint;
 
-  vector<Eigen::Vector3d> g_smoothness, g_distance, g_feasibility, g_endpoint;
+  vector<Eigen::Vector3d> g_tensile, g_smoothness, g_distance, g_feasibility, g_endpoint;
+  g_tensile.resize(control_points_.rows());
   g_smoothness.resize(control_points_.rows());
   g_distance.resize(control_points_.rows());
   g_feasibility.resize(control_points_.rows());
   g_endpoint.resize(control_points_.rows());
 
+  calcTensileCost(q,f_tensile,g_tensile);
   calcSmoothnessCost(q, f_smoothness, g_smoothness);
   calcDistanceCost(q, f_distance, g_distance);
   calcFeasibilityCost(q, f_feasibility, g_feasibility);
@@ -320,14 +359,14 @@ void BsplineOptimizer::combineCost(const std::vector<double>& x, std::vector<dou
   /* ---------- convert to NLopt format...---------- */
   grad.resize(variable_num_);
 
-  f_combine = lamda1_ * f_smoothness + lamda2_ * f_distance + lamda3_ * f_feasibility + lamda4_ * f_endpoint;
+  f_combine = lamda1_ * f_smoothness + lamda2_ * f_distance + lamda3_ * f_feasibility + lamda4_ * f_endpoint + lamda5_ * f_tensile;
 
   for (int i = 0; i < variable_num_ / 3; i++)
     for (int j = 0; j < 3; j++)
     {
       /* the first p points is static here */
       grad[3 * i + j] = lamda1_ * g_smoothness[i + order_](j) + lamda2_ * g_distance[i + order_](j) +
-                        lamda3_ * g_feasibility[i + order_](j) + lamda4_ * g_endpoint[i + order_](j);
+                        lamda3_ * g_feasibility[i + order_](j) + lamda4_ * g_endpoint[i + order_](j) + lamda5_ * g_tensile[i + order_](j);
     }
 
   /* ---------- print cost ---------- */

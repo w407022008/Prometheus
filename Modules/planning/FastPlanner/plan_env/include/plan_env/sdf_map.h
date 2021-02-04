@@ -67,7 +67,6 @@ private:
   ros::Timer update_timer_;
 
   void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msg);
-  void globalcloudCallback(const sensor_msgs::PointCloud2ConstPtr& msg);
 
   void odomCallback(const nav_msgs::OdometryConstPtr& msg);
   void updateCallback(const ros::TimerEvent& e);

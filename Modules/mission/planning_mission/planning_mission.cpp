@@ -4,6 +4,7 @@
 #include <iostream>
 #include <mission_utils.h>
 #include "message_utils.h"
+#include "math.h"
 
 //topic 头文件
 #include <geometry_msgs/Point.h>
@@ -36,6 +37,8 @@ int flag_get_cmd = 0;
 int flag_get_goal = 0;
 float desired_yaw = 0;  //[rad]
 float distance_to_goal = 0;
+ros::Time TimeNow;
+Eigen::Vector3d stop_point;
 //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>声 明 函 数<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 void Fast_planner();
 //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>回 调 函 数<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
@@ -56,6 +59,13 @@ void goal_cb(const geometry_msgs::PoseStamped::ConstPtr& msg)
     goal = *msg;
     flag_get_goal = 1;
     cout << "Get a new goal!"<<endl;
+    if (msg->pose.position.z < 1)  // the minimal goal height 
+	{	
+		goal.pose.position.z = 1;
+	}else if (msg->pose.position.z > 2)  // the maximal goal height 
+	{	
+		goal.pose.position.z = 2;
+	}
 }
 //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>主 函 数<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 int main(int argc, char **argv)
@@ -88,7 +98,7 @@ int main(int argc, char **argv)
         int start_flag = 0;
         while(start_flag == 0)
         {
-            cout << ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>Fast Planner<<<<<<<<<<<<<<<<<<<<<<<<<<< "<< endl;
+            cout << ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Planning mission <<<<<<<<<<<<<<<<<<<<<<<<<<< "<< endl;
             cout << "Please input 1 for start:"<<endl;
             cin >> start_flag;
         }
@@ -131,6 +141,14 @@ int main(int argc, char **argv)
         cout << "Takeoff ..."<<endl;
     }
 
+	while (fabs(_DroneState.velocity[2])>0.3 || fabs(_DroneState.position[2])<0.1){
+		ros::spinOnce();
+		ros::Duration(1.0).sleep();
+	}
+    stop_point[0] = _DroneState.position[0];
+    stop_point[1] = _DroneState.position[1];
+    stop_point[2] = _DroneState.position[2];
+    
     while (ros::ok())
     {
         static int exec_num=0;
@@ -154,18 +172,42 @@ int main(int argc, char **argv)
         //回调
         ros::spinOnce();
 
-        if( flag_get_cmd == 0)
+        if( flag_get_cmd == 0 || flag_get_goal == 0)
         {
+        	if (control_yaw_flag){
+		    	desired_yaw = desired_yaw + 0.5;//M_PI*(ros::Time::now()-TimeNow).toSec();
+		        TimeNow = ros::Time::now();
+		        Command_Now.header.stamp = TimeNow;
+		        Command_Now.Mode                                = prometheus_msgs::ControlCommand::Move;
+		        Command_Now.Command_ID                          = Command_Now.Command_ID + 1;
+		        Command_Now.source = NODE_NAME;
+		        Command_Now.Reference_State.Move_mode           = prometheus_msgs::PositionReference::XYZ_POS;
+		        Command_Now.Reference_State.Move_frame          = prometheus_msgs::PositionReference::ENU_FRAME;
+		        Command_Now.Reference_State.position_ref[0]     = stop_point[0];
+		        Command_Now.Reference_State.position_ref[1]     = stop_point[1];
+		        Command_Now.Reference_State.position_ref[2]     = stop_point[2];
+
+		        Command_Now.Reference_State.yaw_ref             = desired_yaw;
+		        command_pub.publish(Command_Now);
+		    }
             if(exec_num == 10)
             {
-                cout << "Waiting for trajectory" << endl;
+                if (flag_get_goal == 0)
+		            cout << "Waiting for goal... " << endl;
+		        else if (flag_get_cmd == 0)
+                	cout << "Waiting for trajectory..." << endl;
                 exec_num=0;
             }
             ros::Duration(0.5).sleep();
         }else if (distance_to_goal < MIN_DIS)
         {
+        	cout << "Arrived the goal, waiting for a new goal... " << endl;
+            cout << "drone_pos: " << _DroneState.position[0] << " [m] "<< _DroneState.position[1] << " [m] "<< _DroneState.position[2] << " [m] "<<endl;
+            cout << "goal_pos: " << goal.pose.position.x << " [m] "<< goal.pose.position.y << " [m] "<< goal.pose.position.z << " [m] "<<endl;
+            
             // 抵达目标附近，则停止速度控制，改为位置控制
-            Command_Now.header.stamp = ros::Time::now();
+            TimeNow = ros::Time::now();
+            Command_Now.header.stamp = TimeNow;
             Command_Now.Mode                                = prometheus_msgs::ControlCommand::Move;
             Command_Now.Command_ID                          = Command_Now.Command_ID + 1;
             Command_Now.source = NODE_NAME;
@@ -178,24 +220,14 @@ int main(int argc, char **argv)
             Command_Now.Reference_State.yaw_ref             = desired_yaw;
             command_pub.publish(Command_Now);
 
-            if(exec_num == 10)
-            {
-                cout << "Arrived the goal, waiting for a new goal... " << endl;
-                cout << "drone_pos: " << _DroneState.position[0] << " [m] "<< _DroneState.position[1] << " [m] "<< _DroneState.position[2] << " [m] "<<endl;
-                cout << "goal_pos: " << goal.pose.position.x << " [m] "<< goal.pose.position.y << " [m] "<< goal.pose.position.z << " [m] "<<endl;
-                exec_num=0;
-            }
-
             flag_get_goal = 0;
-            while (flag_get_goal == 0)
-            {
-                ros::spinOnce();
-                ros::Duration(0.5).sleep();
-            }
+            flag_get_cmd = 0;
+            stop_point[0] = goal.pose.position.x;
+			stop_point[1] = goal.pose.position.y;
+			stop_point[2] = goal.pose.position.z;
         }else
         {
             Fast_planner();
-            ros::Duration(0.05).sleep();
         }
     }
 
@@ -210,7 +242,7 @@ void Fast_planner()
         // 根据速度大小决定是否更新期望偏航角， 更新采用平滑滤波的方式，系数可调
         // fastplanner航向策略仍然可以进一步优化
         if( sqrt( fast_planner_cmd.velocity_ref[1]* fast_planner_cmd.velocity_ref[1]
-                 +  fast_planner_cmd.velocity_ref[0]* fast_planner_cmd.velocity_ref[0])  >  0.05  )
+                 +  fast_planner_cmd.velocity_ref[0]* fast_planner_cmd.velocity_ref[0])  >  0.1  )
         {
             auto sign=[](double v)->double
             {
@@ -219,33 +251,40 @@ void Fast_planner()
             Eigen::Vector3d ref_vel;
             ref_vel[0] = fast_planner_cmd.velocity_ref[0];
             ref_vel[1] = fast_planner_cmd.velocity_ref[1];
-            ref_vel[2] = fast_planner_cmd.velocity_ref[2];
+            ref_vel[2] = 0.0;
 
-            Eigen::Vector3d ref_pos;
-            ref_pos[0] = fast_planner_cmd.position_ref[0];
-            ref_pos[1] = fast_planner_cmd.position_ref[1];
-            ref_pos[2] = fast_planner_cmd.position_ref[2];
+//            Eigen::Vector3d ref_pos;
+//            ref_pos[0] = fast_planner_cmd.position_ref[0];
+//            ref_pos[1] = fast_planner_cmd.position_ref[1];
+//            ref_pos[2] = 0.0;
 
-            Eigen::Vector3d curr_pos;
-            curr_pos[0] = _DroneState.position[0];
-            curr_pos[1] = _DroneState.position[1];
-            curr_pos[2] = _DroneState.position[2];
+//            Eigen::Vector3d curr_pos;
+//            curr_pos[0] = _DroneState.position[0];
+//            curr_pos[1] = _DroneState.position[1];
+//            curr_pos[2] = 0.0;
 
-            float sign_ = (Eigen::Vector3d(1.0,0.0,0.0).cross(ref_vel))[2];
-            float next_desired_yaw_vel      = sign(sign_) * acos(Eigen::Vector3d(1.0,0.0,0.0).dot(ref_vel));
+            float next_desired_yaw_vel      = sign(ref_vel[1]) * acos(ref_vel[0]/ref_vel.norm());
+//            float next_desired_yaw_pos      = sign((ref_pos - curr_pos)[1]) * acos((ref_pos - curr_pos)[0]/curr_pos.norm());
 
-            sign_ = (Eigen::Vector3d(1.0,0.0,0.0).cross(ref_pos - curr_pos))[2];
-            float next_desired_yaw_pos      = sign(sign_) * acos(Eigen::Vector3d(1.0,0.0,0.0).dot(ref_pos - curr_pos));
-
-
-            desired_yaw = (0.2*desired_yaw + 0.4*next_desired_yaw_pos + 0.4*next_desired_yaw_vel );
+			if (fabs(desired_yaw-next_desired_yaw_vel)<M_PI)
+            	desired_yaw = (0.3*desired_yaw + 0.7*next_desired_yaw_vel);
+            else
+            	desired_yaw = 2*next_desired_yaw_vel-(0.3*desired_yaw + 0.7*next_desired_yaw_vel);
+        } else {
+        	desired_yaw = desired_yaw + 0.5;//M_PI*(ros::Time::now()-TimeNow).toSec();
         }
+        
+    	if(desired_yaw>M_PI)
+    		desired_yaw -= 2*M_PI;
+    	else if (desired_yaw<-M_PI)
+    		desired_yaw += 2*M_PI;
     }else
     {
         desired_yaw = 0.0;
     }
 
-    Command_Now.header.stamp = ros::Time::now();
+	TimeNow = ros::Time::now();
+    Command_Now.header.stamp = TimeNow;
     Command_Now.Mode                                = prometheus_msgs::ControlCommand::Move;
     Command_Now.Command_ID                          = Command_Now.Command_ID + 1;
     Command_Now.source = NODE_NAME;
@@ -253,4 +292,11 @@ void Fast_planner()
     Command_Now.Reference_State.yaw_ref = desired_yaw;
 
     command_pub.publish(Command_Now);
+    
+    if(Eigen::Vector3d(fast_planner_cmd.velocity_ref[0],fast_planner_cmd.velocity_ref[1],fast_planner_cmd.velocity_ref[2]).norm() < 1e-6){
+    	stop_point[0] = fast_planner_cmd.position_ref[0];
+    	stop_point[1] = fast_planner_cmd.position_ref[1];
+    	stop_point[2] = fast_planner_cmd.position_ref[2];
+    	flag_get_cmd = 0;
+    }
 }

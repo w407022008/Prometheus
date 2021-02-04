@@ -1,6 +1,7 @@
 #include <iostream>
 #include <string.h>
 #include <ros/ros.h>
+#include <Eigen/Eigen>
 #include <geometry_msgs/Vector3.h>
 #include <nav_msgs/Odometry.h>
 #include <geometry_msgs/PoseStamped.h>
@@ -31,6 +32,8 @@ std::vector<geometry_msgs::PoseStamped> posehistory_vector_;
 static  string mesh_resource;
 static double color_r, color_g, color_b, color_a, scale;
 
+Eigen::Vector3d position_now, velocity_now, position_last, velocity_last;
+
 void uav_pos_pub() ;
 //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>函数定义<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 // 【订阅】订阅轨迹，并赋值给odom，实现近似动态
@@ -47,14 +50,53 @@ void planner_cmd_cb(const prometheus_msgs::ControlCommand& msg)
         _DroneState.armed = true;
         _DroneState.landed = false;
         _DroneState.mode = "OFFBOARD";
+        
+        double delta_t = 0.05;
+        position_now[0] = command_now.Reference_State.position_ref[0];
+        position_now[1] = command_now.Reference_State.position_ref[1];
+        position_now[2] = command_now.Reference_State.position_ref[2];
 
-        _DroneState.position[0] = command_now.Reference_State.position_ref[0];
-        _DroneState.position[1] = command_now.Reference_State.position_ref[1];
-        _DroneState.position[2] = command_now.Reference_State.position_ref[2];
+        velocity_now[0] = command_now.Reference_State.velocity_ref[0];
+        velocity_now[1] = command_now.Reference_State.velocity_ref[1];
+        velocity_now[2] = command_now.Reference_State.velocity_ref[2];
+        
+        if(command_now.Reference_State.Move_mode == prometheus_msgs::PositionReference::TRAJECTORY){
+		    _DroneState.position[0] = position_now[0];
+		    _DroneState.position[1] = position_now[1];
+		    _DroneState.position[2] = position_now[2];
 
-        _DroneState.velocity[0] = command_now.Reference_State.velocity_ref[0];
-        _DroneState.velocity[1] = command_now.Reference_State.velocity_ref[1];
-        _DroneState.velocity[2] = command_now.Reference_State.velocity_ref[2];
+			_DroneState.velocity[0] = velocity_now[0];
+		    _DroneState.velocity[1] = velocity_now[1];
+		    _DroneState.velocity[2] = velocity_now[2];
+			
+        }else if(command_now.Reference_State.Move_mode == prometheus_msgs::PositionReference::XYZ_POS){
+		    _DroneState.position[0] = position_now[0];
+		    _DroneState.position[1] = position_now[1];
+		    _DroneState.position[2] = position_now[2];
+
+			_DroneState.velocity[0] = (position_now[0] - position_last[0]) / delta_t;
+			_DroneState.velocity[1] = (position_now[1] - position_last[1]) / delta_t;
+			_DroneState.velocity[2] = (position_now[2] - position_last[2]) / delta_t;
+			
+        }else if (command_now.Reference_State.Move_mode == prometheus_msgs::PositionReference::XYZ_VEL){
+		    _DroneState.position[0] += velocity_now[0]*delta_t;
+		    _DroneState.position[1] += velocity_now[1]*delta_t;
+		    _DroneState.position[2] += velocity_now[2]*delta_t;
+
+		    _DroneState.velocity[0] = velocity_now[0];
+		    _DroneState.velocity[1] = velocity_now[1];
+		    _DroneState.velocity[2] = velocity_now[2];
+		}else if (command_now.Reference_State.Move_mode == prometheus_msgs::PositionReference::XY_VEL_Z_POS){
+			_DroneState.position[0] += velocity_now[0]*delta_t;
+		    _DroneState.position[1] += velocity_now[1]*delta_t;
+		    _DroneState.position[2] = position_now[2];
+		    
+		    _DroneState.velocity[0] = velocity_now[0];
+		    _DroneState.velocity[1] = velocity_now[1];
+		    _DroneState.velocity[2] = velocity_now[2];
+		}
+        position_last = position_now;
+		velocity_last = velocity_now;
     }
 }
 int main(int argc,char** argv)
@@ -121,7 +163,15 @@ void uav_pos_pub()
         _DroneState.velocity[0] = 0.0;
         _DroneState.velocity[1] = 0.0;
         _DroneState.velocity[2] = 0.0;
+        
+        position_last[0] = init_pos[0];
+        position_last[1] = init_pos[1];
+        position_last[2] = init_pos[2];
 
+        velocity_last[0] = 0.0;
+        velocity_last[1] = 0.0;
+        velocity_last[2] = 0.0;
+        
         geometry_msgs::Quaternion uav_quat;
         uav_quat.x = 0;
         uav_quat.y = 0;

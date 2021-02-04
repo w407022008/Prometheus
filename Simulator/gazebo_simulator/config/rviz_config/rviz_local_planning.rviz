@@ -7,6 +7,7 @@ Panels:
         - /无人机状态1
         - /Ground_Truth1/PointCloud21
         - /Octomap建图1
+        - /局部规划1
         - /全局规划1/Reference_Path1
         - /Fast_Planner1/Reference_Tra1
       Splitter Ratio: 0.5616942644119263
@@ -298,7 +299,7 @@ Visualization Manager:
           Queue Size: 10
           Selectable: true
           Size (Pixels): 3
-          Size (m): 0.009999999776482582
+          Size (m): 0.05000000074505806
           Style: Flat Squares
           Topic: /prometheus/sensors/3Dlidar_scan
           Unreliable: false
@@ -365,7 +366,7 @@ Visualization Manager:
           Use Fixed Frame: true
           Use rainbow: true
           Value: true
-      Enabled: false
+      Enabled: true
       Name: 局部规划
     - Class: rviz/Group
       Displays:
@@ -431,7 +432,7 @@ Visualization Manager:
           Marker Topic: /planning_vis/trajectory
           Name: Reference_Tra
           Namespaces:
-            "": true
+            {}
           Queue Size: 100
           Value: true
         - Alpha: 1
@@ -464,7 +465,7 @@ Visualization Manager:
           Use Fixed Frame: true
           Use rainbow: true
           Value: true
-      Enabled: true
+      Enabled: false
       Name: Fast_Planner
     - Class: rviz/Group
       Displays:
@@ -680,9 +681,9 @@ Visualization Manager:
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0.9697653651237488
-        Y: -3.20110821723938
-        Z: 5.4097394943237305
+        X: -2.40484619140625
+        Y: -1.2475372552871704
+        Z: 5.411571979522705
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
@@ -691,7 +692,7 @@ Visualization Manager:
       Pitch: 1.5697963237762451
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 0.07883711904287338
+      Yaw: 4.767020225524902
     Saved: ~
 Window Geometry:
   Displays:

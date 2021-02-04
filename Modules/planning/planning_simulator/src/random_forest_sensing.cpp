@@ -71,10 +71,12 @@ vector<float> pointRadiusSquaredDistance;
 // 障碍物点云地图
 pcl::PointCloud<pcl::PointXYZ> cloudMap;
 // 用于发布的局部点云和全局点云
-sensor_msgs::PointCloud2 localMap_pcd;
+sensor_msgs::PointCloud2 localBodyMap_pcd;
+sensor_msgs::PointCloud2 localENUMap_pcd;
 sensor_msgs::PointCloud2 globalMap_pcd;
 
-ros::Publisher local_map_pub;
+ros::Publisher local_body_map_pub;
+ros::Publisher local_ENU_map_pub;
 ros::Publisher global_map_pub;
 
 void drone_state_cb(const prometheus_msgs::DroneState::ConstPtr &msg)
@@ -108,7 +110,9 @@ int main(int argc, char** argv)
   drone_state_sub = n.subscribe("/prometheus/drone_state", 50, drone_state_cb);
 
   // 发布 模拟的局部点云
-  local_map_pub = n.advertise<sensor_msgs::PointCloud2>("/prometheus/planning/local_pcl_sim", 1);
+  local_body_map_pub = n.advertise<sensor_msgs::PointCloud2>("/prometheus/planning/local_body_pcl_sim", 1);
+  
+  local_ENU_map_pub = n.advertise<sensor_msgs::PointCloud2>("/prometheus/planning/local_enu_pcl_sim", 1);
   
   // 发布 模拟的全局点云
   global_map_pub = n.advertise<sensor_msgs::PointCloud2>("/prometheus/planning/global_pcl_sim", 1);
@@ -119,9 +123,9 @@ int main(int argc, char** argv)
   n.param("init_pos_y", _init_y, 0.0);
 
   // 地图尺寸、分辨率
-  n.param("map/x_size", map_size_x, 10.0);
-  n.param("map/y_size", map_size_y, 10.0);
-  n.param("map/z_size", map_size_z, 5.0);
+  n.param("global_map/x_size", map_size_x, 10.0);
+  n.param("global_map/y_size", map_size_y, 10.0);
+  n.param("global_map/z_size", map_size_z, 5.0);
   n.param("map/resolution", _resolution, 0.2);
   // 障碍物 - 两种障碍物：柱子与圆
   n.param("map/circle_num", _circle_num, 30);
@@ -333,7 +337,9 @@ void pubSensedPoints()
     return;
   }
 
-  pcl::PointCloud<pcl::PointXYZ> localMap;
+  pcl::PointCloud<pcl::PointXYZ> localBodyMap;
+  
+  pcl::PointCloud<pcl::PointXYZ> localEUNMap;
 
   pcl::PointXYZ searchPoint(_state[0], _state[1], _state[2]);
   pointIdxRadiusSearch.clear();
@@ -364,8 +370,8 @@ Eigen::Matrix<double, 3,3> rotaion_mat_global_to_local = Eigen::Quaterniond(_sta
         pt_new.y = p3d(1);
         pt_new.z = p3d(2);
       }
-      localMap.points.push_back(pt_new);
-      // localMap.points.push_back(pt);
+      localBodyMap.points.push_back(pt_new);
+      localEUNMap.points.push_back(pt);
     }
   }
   else
@@ -374,14 +380,21 @@ Eigen::Matrix<double, 3,3> rotaion_mat_global_to_local = Eigen::Quaterniond(_sta
     return;
   }
 
-  localMap.width = localMap.points.size();
-  localMap.height = 1;
-  localMap.is_dense = true;
+  localBodyMap.width = localBodyMap.points.size();
+  localBodyMap.height = 1;
+  localBodyMap.is_dense = true;
+  
+  localEUNMap.width = localEUNMap.points.size();
+  localEUNMap.height = 1;
+  localEUNMap.is_dense = true;
 
   // 发布局部点云,此处需要发布 base_link与 world的关系
-  pcl::toROSMsg(localMap, localMap_pcd);
-  localMap_pcd.header.frame_id = "base_link";
-  local_map_pub.publish(localMap_pcd);
+  pcl::toROSMsg(localBodyMap, localBodyMap_pcd);
+  pcl::toROSMsg(localEUNMap, localENUMap_pcd);
+  localBodyMap_pcd.header.frame_id = "base_link";
+  localENUMap_pcd.header.frame_id = "world";
+  local_body_map_pub.publish(localBodyMap_pcd);
+  local_ENU_map_pub.publish(localENUMap_pcd);
 
   //发布tf，World-ENU <--> Body-ENU
   static tf::TransformBroadcaster br;

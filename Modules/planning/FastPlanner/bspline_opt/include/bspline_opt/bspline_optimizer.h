@@ -27,8 +27,9 @@ private:
   double lamda3_;             // feasibility weight
   double lamda4_;             // end point weight
   double lamda5_;             // guide cost weight
-  double dist0_;              // safe distance
-  double dist1_;              // unsafe distance
+  double dist0_;              // unsafe distance
+  double dist1_;              // safe distance
+  double ratio_limit;
   double max_vel_, max_acc_;  // constrains parameters
   int variable_num_;
   int algorithm_;
@@ -81,6 +82,7 @@ private:
   /* calculate each part of cost function with control points q */
   void combineCost(const std::vector<double>& x, vector<double>& grad, double& cost);
 
+  void calcTensileCost(const vector<Eigen::Vector3d>& q, double& cost, vector<Eigen::Vector3d>& gradient);
   void calcSmoothnessCost(const vector<Eigen::Vector3d>& q, double& cost, vector<Eigen::Vector3d>& gradient);
   void calcDistanceCost(const vector<Eigen::Vector3d>& q, double& cost, vector<Eigen::Vector3d>& gradient);
   void calcFeasibilityCost(const vector<Eigen::Vector3d>& q, double& cost, vector<Eigen::Vector3d>& gradient);
