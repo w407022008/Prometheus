@@ -15,7 +15,7 @@ private:
   /* non-uniform bspline */
   int p_, n_, m_;
   Eigen::MatrixXd control_points_;
-  Eigen::VectorXd u_;  // knots vector
+  Eigen::VectorXd u_, u;  // knots vector
   double interval_;    // init interval
 
   Eigen::Vector3d x0_, v0_, a0_;

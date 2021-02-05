@@ -50,12 +50,12 @@ namespace dyn_planner {
 
     bool SDFMap::isInMap(Eigen::Vector3d pos) {
         if (pos(0) < min_range_(0) + 1e-4 || pos(1) < min_range_(1) + 1e-4 || pos(2) < min_range_(2) + 1e-4) {
-            // cout << "less than min range!" << endl;
+            // cout << "less than min range!" << pos.transpose() << endl;
             return false;
         }
 
         if (pos(0) > max_range_(0) - 1e-4 || pos(1) > max_range_(1) - 1e-4 || pos(2) > max_range_(2) - 1e-4) {
-            // cout << "larger than max range!" << endl;
+            // cout << "larger than max range!" << pos.transpose() << endl;
             return false;
         }
 
@@ -144,8 +144,9 @@ namespace dyn_planner {
     }
 
     double SDFMap::getDistance(Eigen::Vector3d pos) {
-        if (!isInMap(pos))
+        if (!isInMap(pos)){
             return -1;
+        }
 
         Eigen::Vector3i id;
         posToIndex(pos, id);
@@ -164,8 +165,10 @@ namespace dyn_planner {
     }
 
     double SDFMap::getDistWithGradTrilinear(Eigen::Vector3d pos, Eigen::Vector3d &grad) {
-        if (!isInMap(pos))
+        if (!isInMap(pos)){
+            // cout << "is not in map!" << pos.transpose() << endl;
             return -1;
+        }
 
         /* use trilinear interpolation */
         Eigen::Vector3d pos_m = pos - 0.5 * resolution_sdf_ * Eigen::Vector3d::Ones();

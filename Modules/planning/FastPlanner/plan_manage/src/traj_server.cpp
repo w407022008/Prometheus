@@ -34,6 +34,7 @@ ros::Time time_traj_start;
 int traj_id;
 double traj_duration;
 double t_cmd_start, t_cmd_end;
+double max_vel_, max_acc_;
 
 vector<Eigen::Vector3d> traj_cmd, traj_real;
 
@@ -220,6 +221,10 @@ void cmdCallback(const ros::TimerEvent& e)
 
   cmd.yaw_ref = 0.0;
 
+  if(vel.norm()>max_vel_) cout << "[cmdCallback]: out of range, velocity: " << vel.norm() << ", whereas maximum velocity: " << max_vel_ << endl;
+  
+  if(acc.norm()>max_acc_) cout << "[cmdCallback]: out of range, acceleration: " << acc.norm() << ", whereas maximum acceleration: " << max_acc_ << endl;
+
   // 发布控制指令
   pos_cmd_pub.publish(cmd);
 
@@ -235,10 +240,14 @@ void cmdCallback(const ros::TimerEvent& e)
 int main(int argc, char** argv) 
 {
   ros::init(argc, argv, "traj_server");
-  ros::NodeHandle node;
+  ros::NodeHandle node("~");
 
+  /* ---------- init global param---------- */
+  node.param<double>("bspline/limit_vel", max_vel_, 0.0);
+  node.param<double>("bspline/limit_acc", max_acc_, 0.0);
+  
   // 是否为仿真模式
-  node.param("sim_mode", sim_mode, false); 
+  node.param<bool>("sim_mode", sim_mode, false); 
 
   // 订阅bspline, replan标志， odom信息（只用于显示）
   ros::Subscriber bspline_sub = node.subscribe("/prometheus/planning/bspline", 10, bsplineCallback);

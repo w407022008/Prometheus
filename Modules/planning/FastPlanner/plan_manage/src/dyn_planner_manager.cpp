@@ -47,7 +47,7 @@ bool DynPlannerManager::checkTrajCollision()
 
     if ((dist < margin_)||(t==t_end_ && dist < 2*margin_))
     {
-      cout << "current traj in collision at time step: " << (t-t_start_)/0.02 << endl;
+      cout << "current traj in collision at time step: " << (t-t_start_)/(t_end_-t_start_)*100 << "%" << endl;
       return false;
     }
   }
@@ -207,17 +207,17 @@ cout << "Close goal" << endl;
   bool feasible = pos.checkFeasibility(false, ts);
 
   int iter_num = 0;
-//  while (!feasible && ros::ok())
-//  {
-//    ++iter_num;
+  while (!feasible && ros::ok())
+  {
+    ++iter_num;
 
-//    feasible = pos.reallocateTime(false, ts);
-//    /* actually this not needed, converges within 10 iteration */
-//    if (iter_num >= 50)
-//      break;
-//  }
+    feasible = pos.reallocateTime(false, ts);
+    /* actually this not needed, converges within 10 iteration */
+    if (iter_num >= 50)
+      break;
+  }
 
-  // cout << "[Main]: iter num: " << iter_num << endl;
+   cout << "[Main]: iter num: " << iter_num << endl;
   pos.getTimeSpan(tm, tmp);
   tn = tmp - tm;
 

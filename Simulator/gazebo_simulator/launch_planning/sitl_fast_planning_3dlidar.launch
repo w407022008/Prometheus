@@ -146,11 +146,11 @@
 		<param name="search/check_num" value="5" type="int"/>
 
 		<!-- Bspline trajectory optimization -->
-		<param name="optimization/lamda1" value="0.001" type="double"/>	<!-- smoothness jerk-->
-		<param name="optimization/lamda2" value="2.0" type="double"/>	<!-- distance -->
-		<param name="optimization/lamda3" value="0.00001" type="double"/>	<!-- feasibility vel&acc -->
-		<param name="optimization/lamda4" value="0.0001" type="double"/>	<!-- endpoint pos -->
-		<param name="optimization/lamda5" value="0.01" type="double"/>	<!-- tensile strength -->
+		<param name="optimization/lamda1" value="0.1" type="double"/>	<!-- smoothness jerk-->
+		<param name="optimization/lamda2" value="1.0" type="double"/>	<!-- distance -->
+		<param name="optimization/lamda3" value="0.1" type="double"/>	<!-- feasibility vel&acc -->
+		<param name="optimization/lamda4" value="0.01" type="double"/>	<!-- endpoint pos -->
+		<param name="optimization/lamda5" value="17.0" type="double"/>	<!-- tensile strength -->
 		<param name="optimization/dist0" value="0.5" type="double"/>	<!-- bigger than inflate -->
 		<param name="optimization/dist1" value="1.0" type="double"/>	<!-- efficient distance to sense obs -->
 		<param name="optimization/max_vel" value="$(arg max_vel)" type="double"/>	<!-- 最大速度要求 -->

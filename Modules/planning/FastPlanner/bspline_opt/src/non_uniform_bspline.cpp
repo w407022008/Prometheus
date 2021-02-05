@@ -35,6 +35,10 @@ NonUniformBspline::NonUniformBspline(Eigen::MatrixXd points, int order, double i
     }
   }
 
+
+this->u = this->u_; // base on uniform b spline with time remapping.
+
+
   // show the result
   // cout << "p_: " << p_ << "  n: " << n << "  m: " << m << endl;
   // cout << "control pts:\n" << control_points_ << "\nknots:\n" <<
@@ -94,6 +98,8 @@ Eigen::Vector3d NonUniformBspline::evaluateDeBoor(double t)
     ++k;
   }
 
+double new_t = u(k) + (t-u_(k))/(u_(k+1)-u_(k)) * (u(k+1)-u(k));  // Time remapping.
+
   /* deBoor's alg */
   vector<Eigen::Vector3d> d;
   for (int i = 0; i <= p_; ++i)
@@ -106,7 +112,7 @@ Eigen::Vector3d NonUniformBspline::evaluateDeBoor(double t)
   {
     for (int i = p_; i >= r; --i)
     {
-      double alpha = (t - u_[i + k - p_]) / (u_[i + 1 + k - r] - u_[i + k - p_]);// HERE!! the curve will be change if the knots has been changed
+      double alpha = (new_t - u[i + k - p_]) / (u[i + 1 + k - r] - u[i + k - p_]);// HERE!! the curve will be change if the knots has been changed. 
       // cout << "alpha: " << alpha << endl;
       d[i] = (1 - alpha) * d[i - 1] + alpha * d[i];
     }
@@ -148,35 +154,35 @@ bool NonUniformBspline::checkFeasibility(bool show, double ts)
   Eigen::MatrixXd P = control_points_;
 
   /* check vel feasibility and insert points */
-//  double max_vel = -1.0;
-//  for (int i = 0; i < P.rows() - 2; ++i)
-//  {
-//	Eigen::Vector3d vel = p_ * (P.row(i + 2) - P.row(i)) / 2 / (u_(i + p_ + 1) - u_(i + 1));
-//	   if (fabs(vel(0)) > limit_vel_ + 1e-4 || fabs(vel(1)) > limit_vel_ + 1e-4 || fabs(vel(2)) > limit_vel_ + 1e-4)
-//    {
-//      fea = false;
-//      max_vel = max(max_vel, fabs(vel(0)));
-//      max_vel = max(max_vel, fabs(vel(1)));
-//      max_vel = max(max_vel, fabs(vel(2)));
-//      if (show)
-//        cout << "[Realloc]: Infeasible vel " << i << " :" << vel.transpose() << endl;
-//    }
-//  }
-  double max_vel = -1.0;
-  for (int i = 0; i < P.rows() - 1; ++i)
-  {
-    Eigen::Vector3d vel = p_ * (P.row(i + 1) - P.row(i)) / (u_(i + p_ + 1) - u_(i + 1));
-    if (fabs(vel(0)) > limit_vel_ + 1e-4 || fabs(vel(1)) > limit_vel_ + 1e-4 || fabs(vel(2)) > limit_vel_ + 1e-4)
-    {
-      /* insert mid point */
-      if (show)
-        cout << "[Check]: Infeasible vel " << i << " :" << vel.transpose() << endl;
-      fea = false;
-      max_vel = max(max_vel, fabs(vel(0)));
-      max_vel = max(max_vel, fabs(vel(1)));
-      max_vel = max(max_vel, fabs(vel(2)));
-    }
-  }
+ double max_vel = -1.0;
+ for (int i = 0; i < P.rows() - 2; ++i)
+ {
+	Eigen::Vector3d vel = p_ * (P.row(i + 2) - P.row(i+1)) / 2 / (u_(i + p_ + 2) - u_(i + 2)) + p_ * (P.row(i + 1) - P.row(i)) / 2 / (u_(i + p_ + 1) - u_(i + 1));
+	   if (fabs(vel(0)) > limit_vel_ + 1e-4 || fabs(vel(1)) > limit_vel_ + 1e-4 || fabs(vel(2)) > limit_vel_ + 1e-4)
+   {
+     fea = false;
+     max_vel = max(max_vel, fabs(vel(0)));
+     max_vel = max(max_vel, fabs(vel(1)));
+     max_vel = max(max_vel, fabs(vel(2)));
+     if (show)
+       cout << "[Realloc]: Infeasible vel " << i << " :" << vel.transpose() << endl;
+   }
+ }
+  // double max_vel = -1.0;
+  // for (int i = 0; i < P.rows() - 1; ++i)
+  // {
+  //   Eigen::Vector3d vel = p_ * (P.row(i + 1) - P.row(i)) / (u_(i + p_ + 1) - u_(i + 1));
+  //   if (fabs(vel(0)) > limit_vel_ + 1e-4 || fabs(vel(1)) > limit_vel_ + 1e-4 || fabs(vel(2)) > limit_vel_ + 1e-4)
+  //   {
+  //     /* insert mid point */
+  //     if (show)
+  //       cout << "[Check]: Infeasible vel " << i << " :" << vel.transpose() << endl;
+  //     fea = false;
+  //     max_vel = max(max_vel, fabs(vel(0)));
+  //     max_vel = max(max_vel, fabs(vel(1)));
+  //     max_vel = max(max_vel, fabs(vel(2)));
+  //   }
+  // }
 
   /* acc feasibility */
   double max_acc = -1.0;
@@ -227,77 +233,82 @@ bool NonUniformBspline::reallocateTime(bool show, double ts)
 
   /* check vel feasibility and insert points */
   double max_vel = -1.0;
-  for (int i = 0; i < P.rows() - 2; ++i)
+  for (int i = 0; i < P.rows() - p_; ++i)
   {
-//	Eigen::Vector3d vel = 2*(p_-1) * (P.row(i + 2) - P.row(i)) / 2 / (u_(i + p_ - 1) - u_(i - p_ + 1));
-//	   if (fabs(vel(0)) > limit_vel_ + 1e-4 || fabs(vel(1)) > limit_vel_ + 1e-4 || fabs(vel(2)) > limit_vel_ + 1e-4)
-//    {
-//      fea = false;
-//      max_vel = -1.0;
-//      max_vel = max(max_vel, fabs(vel(0)));
-//      max_vel = max(max_vel, fabs(vel(1)));
-//      max_vel = max(max_vel, fabs(vel(2)));
-//      if (show)
-//        cout << "[Realloc]: Infeasible vel " << i << " :" << vel.transpose() << endl;
+	Eigen::Vector3d vel = p_ * (P.row(i + 2) - P.row(i+1)) / 2 / (u_(i + p_ + 2) - u_(i + 2)) + p_ * (P.row(i + 1) - P.row(i)) / 2 / (u_(i + p_ + 1) - u_(i + 1));
+	   if (fabs(vel(0)) > limit_vel_ + 1e-4 || fabs(vel(1)) > limit_vel_ + 1e-4 || fabs(vel(2)) > limit_vel_ + 1e-4)
+   {
+     fea = false;
+     max_vel = -1.0;
+     max_vel = max(max_vel, fabs(vel(0)));
+     max_vel = max(max_vel, fabs(vel(1)));
+     max_vel = max(max_vel, fabs(vel(2)));
+     if (show)
+       cout << "[Realloc]: Infeasible vel " << i << " :" << vel.transpose() << endl;
 
-//      double ratio = max_vel / limit_vel_ + 1e-4;
-//      if (ratio > limit_ratio_)
-//        ratio = limit_ratio_;
+     double ratio = max_vel / limit_vel_ + 1e-4;
+     if (ratio > limit_ratio_)
+       ratio = limit_ratio_;
 
-//	  double time_ori = u_(i + p_ - 1) - u_(i - p_ + 1);
-//      double time_new = ratio * time_ori;
-//      double delta_t = time_new - time_ori;
-//      double t_inc = delta_t / double(p_+1);
+	  double time_ori = u_(i + p_ + 2) - u_(i + 1);
+     double time_new = ratio * time_ori;
+     double delta_t = time_new - time_ori;
+     double t_inc = delta_t / double(p_+1);
 
-//      for (int j = i - p_ + 2; j < i + p_ - 1; ++j)
-//      {
-//        u_(j) += double(j - i - 1 + p_) * t_inc;
-//        if (j <= 5 && j >= 1)
-//        {
-//          // cout << "vel j: " << j << endl;
-//        }
-//      }
+     for (int j = i + 2; j < i + p_ + 2; ++j)
+     {
+       u_(j) += double(j - i - 1) * t_inc;
+       if (j <= 5 && j >= 1)
+       {
+         // cout << "vel j: " << j << endl;
+       }
+     }
 
-//      for (int j = i + p_; j < u_.rows(); ++j)
-//      {
-//        u_(j) += delta_t;
-//      }
-//    }
-    Eigen::Vector3d vel = p_ * (P.row(i + 1) - P.row(i)) / (u_(i + p_ + 1) - u_(i + 1));
-    if (fabs(vel(0)) > limit_vel_ + 1e-4 || fabs(vel(1)) > limit_vel_ + 1e-4 || fabs(vel(2)) > limit_vel_ + 1e-4)
-    {
-      fea = false;
-      max_vel = -1.0;
-      max_vel = max(max_vel, fabs(vel(0)));
-      max_vel = max(max_vel, fabs(vel(1)));
-      max_vel = max(max_vel, fabs(vel(2)));
-      if (show)
-        cout << "[Realloc]: Infeasible vel " << i << " :" << vel.transpose() << endl;
-
-      double ratio = max_vel / limit_vel_ + 1e-4;
-      if (ratio > limit_ratio_)
-        ratio = limit_ratio_;
-
-      double time_ori = u_(i + p_ + 1) - u_(i + 1);
-      double time_new = ratio * time_ori;
-      double delta_t = time_new - time_ori;
-      double t_inc = delta_t / double(p_);
-
-      for (int j = i + 2; j <= i + p_ + 1; ++j)
-      {
-        u_(j) += double(j - i - 1) * t_inc;
-        if (j <= 5 && j >= 1)
-        {
-          // cout << "vel j: " << j << endl;
-        }
-      }
-
-      for (int j = i + p_ + 2; j < u_.rows(); ++j)
-      {
-        u_(j) += delta_t;
-      }
-    }
+     for (int j = i + p_-1; j < u_.rows(); ++j)
+     {
+       u_(j) += delta_t;
+     }
+   }
   }
+
+  // double max_vel = -1.0;
+  // for (int i = 0; i < P.rows() - 2; ++i)
+  // {
+  //   Eigen::Vector3d vel = p_ * (P.row(i + 1) - P.row(i)) / (u_(i + p_ + 1) - u_(i + 1));
+  //   if (fabs(vel(0)) > limit_vel_ + 1e-4 || fabs(vel(1)) > limit_vel_ + 1e-4 || fabs(vel(2)) > limit_vel_ + 1e-4)
+  //   {
+  //     fea = false;
+  //     max_vel = -1.0;
+  //     max_vel = max(max_vel, fabs(vel(0)));
+  //     max_vel = max(max_vel, fabs(vel(1)));
+  //     max_vel = max(max_vel, fabs(vel(2)));
+  //     if (show)
+  //       cout << "[Realloc]: Infeasible vel " << i << " :" << vel.transpose() << endl;
+
+  //     double ratio = max_vel / limit_vel_ + 1e-4;
+  //     if (ratio > limit_ratio_)
+  //       ratio = limit_ratio_;
+
+  //     double time_ori = u_(i + p_ + 1) - u_(i + 1);
+  //     double time_new = ratio * time_ori;
+  //     double delta_t = time_new - time_ori;
+  //     double t_inc = delta_t / double(p_);
+
+  //     for (int j = i + 2; j <= i + p_ + 1; ++j)
+  //     {
+  //       u_(j) += double(j - i - 1) * t_inc;
+  //       if (j <= 5 && j >= 1)
+  //       {
+  //         // cout << "vel j: " << j << endl;
+  //       }
+  //     }
+
+  //     for (int j = i + p_ + 2; j < u_.rows(); ++j)
+  //     {
+  //       u_(j) += delta_t;
+  //     }
+  //   }
+  // }
 
   /* acc feasibility */
   double max_acc = -1.0;
@@ -408,7 +419,7 @@ bool NonUniformBspline::adjustTime(bool show) // useless
 
       for (int j = i + 2; j <= i + p_ + 1; ++j)
       {
-        u_(j) += double(j - i - 1) * t_inc;
+        u_(j) += double(j - i - 1) * t_inc; // Share evenly?
         if (j <= 5 && j >= 1)
         {
           // cout << "vel j: " << j << endl;

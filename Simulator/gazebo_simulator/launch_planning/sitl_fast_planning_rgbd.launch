@@ -114,12 +114,12 @@
 		<param name="bspline/limit_ratio" value="1.1" type="double"/>
 
 		<!-- dyn_planner_manager.cpp -->
-		<param name="manager/time_sample" value="0.8" type="double"/>
+		<param name="manager/time_sample" value="0.5" type="double"/>
 		<param name="manager/max_vel" value="$(arg max_vel)" type="double"/>
 		<param name="manager/dynamic" value="$(arg dynamic)" type="int"/>
 		<param name="manager/margin" value="0.4" type="double"/> <!-- for trajectory, equal to inflate -->
 
-		<!-- sdf_map.cp-->
+		<!-- sdf_map.cp -->
 		<param name="sdf_map/origin_x" value="-20.0" type="double"/>
 		<param name="sdf_map/origin_y" value="-20.0" type="double"/>
 		<param name="sdf_map/origin_z" value="0.0" type="double"/>
@@ -137,7 +137,7 @@
 		<param name="astar/lambda_heu" value="10.0" type="double"/>
 		<param name="astar/resolution_astar" value="0.1" type="double"/>
 		<param name="astar/time_resolution" value="0.8" type="double"/>
-		<param name="astar/margin" value="0.2" type="double"/>
+		<param name="astar/margin" value="0.4" type="double"/>
 		<param name="astar/allocate_num" value="100000" type="int"/>
 		<!-- kinodynamic path searching -->
 		<param name="search/max_tau" value="0.8" type="double"/>
@@ -154,12 +154,12 @@
 		<param name="search/check_num" value="5" type="int"/>
 
 		<!-- Bspline trajectory optimization -->
-		<param name="optimization/lamda1" value="0.0001" type="double"/>	<!-- smoothness jerk-->
-		<param name="optimization/lamda2" value="2.0" type="double"/>	<!-- distance -->
-		<param name="optimization/lamda3" value="0.00001" type="double"/>	<!-- feasibility vel&acc -->
-		<param name="optimization/lamda4" value="0.0001" type="double"/>	<!-- endpoint pos -->
-		<param name="optimization/lamda5" value="0.01" type="double"/>	<!-- tensile strength -->
-		<param name="optimization/dist0" value="0.6" type="double"/>	<!-- bigger than inflate -->
+		<param name="optimization/lamda1" value="0.1" type="double"/>	<!-- smoothness jerk-->
+		<param name="optimization/lamda2" value="1.0" type="double"/>	<!-- distance -->
+		<param name="optimization/lamda3" value="0.1" type="double"/>	<!-- feasibility vel&acc -->
+		<param name="optimization/lamda4" value="0.01" type="double"/>	<!-- endpoint pos -->
+		<param name="optimization/lamda5" value="17.0" type="double"/>	<!-- tensile strength -->
+		<param name="optimization/dist0" value="0.5" type="double"/>	<!-- bigger than inflate -->
 		<param name="optimization/dist1" value="1.0" type="double"/>	<!-- efficient distance to sense obs -->
 		<param name="optimization/max_vel" value="$(arg max_vel)" type="double"/>	<!-- 最大速度要求 -->
 		<param name="optimization/max_acc" value="$(arg max_acc)" type="double"/>	<!-- 最大加速度要求 -->
@@ -170,7 +170,9 @@
 	</node>
 
 	<!-- 发布轨迹 -->
-	<node pkg="prometheus_plan_manage" name="traj_server" type="traj_server" output="log">
+	<node pkg="prometheus_plan_manage" name="traj_server" type="traj_server" output="screen" launch-prefix="gnome-terminal --tab --">
+		<param name="bspline/limit_vel" value="$(arg max_vel)" type="double"/>
+		<param name="bspline/limit_acc" value="$(arg max_acc)" type="double"/>
 	</node>
 
 	<!-- 发布追踪轨迹指令， 激光输入control_yaw_flag设为false，rgbd输入control_yaw_flag设为true -->

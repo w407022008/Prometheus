@@ -164,6 +164,7 @@ void BsplineOptimizer::calcTensileCost(const vector<Eigen::Vector3d>& q, double&
   
     gradient[i] += 2 * qd * (1) / num_contol_poly_edge;
     gradient[i+1] += 2 * qd * (-1) / num_contol_poly_edge;
+    // if (cost > 0.0) cout << "bspline_optimizer: tensile_cost: " << cost << endl;
   }
 }
 
@@ -206,10 +207,31 @@ void BsplineOptimizer::calcDistanceCost(const vector<Eigen::Vector3d>& q, double
 
   for (int i = order_; i < end_idx; i++) // ignoring the start point and the end point on the trajectory
   {
-  	Eigen::Vector3d pos_ = 1/6*(q[i-1] + 4*q[i] + q[i+1]);
+  	Eigen::Vector3d pos_ = (q[i-1] + 4*q[i] + q[i+1])/6;
+
+    // if (q[i-1][0]< -20.0 || q[i-1][1] < -20.0 || q[i-1][2] < 1e-4) 
+    //   cout << "i-1 is not in map!" << q[i-1].transpose() << endl;
+    // else
+    //   cout << "i-1 is in map!" << q[i-1].transpose() << endl;
+    
+    // if (q[i+1][0]< -20.0 || q[i+1][1] < -20.0 || q[i+1][2] < 1e-4) 
+    //   cout << "i+1 is not in map!" << q[i+1].transpose() << endl;
+    // else
+    //   cout << "i+1 is in map!" << q[i+1].transpose() << endl;
+    
+    // if (q[i][0]< -20.0 || q[i][1] < -20.0 || q[i][2] < 1e-4) 
+    //   cout << "i is not in map!" << q[i].transpose() << endl;
+    // else
+    //   cout << "i is in map!" << q[i].transpose() << endl;
+    
+    // if (pos_[0]< -20.0 || pos_[1] < -20.0 || pos_[2] < 1e-4) 
+    //   cout << "pos_ is not in map!" << pos_.transpose() << endl;
+    // else
+    //   cout << "pos_ is in map!" << pos_.transpose() << endl;
+
     if (!dynamic_)
     {
-      edt_env_->evaluateEDTWithGrad(pos_, -1.0, dist, dist_grad);
+      edt_env_->evaluateEDTWithGrad(pos_, 0.0, dist, dist_grad);
     }
     else
     {
@@ -217,9 +239,13 @@ void BsplineOptimizer::calcDistanceCost(const vector<Eigen::Vector3d>& q, double
       edt_env_->evaluateEDTWithGrad(pos_, time, dist, dist_grad);
     }
 
+   if (dist<0.0) {
+     continue; // is not in map.
+   }
+
 	if (dist < dist1_){
 		if (dist < dist0_){
-			double ratio = dist0_ / dist;
+			double ratio = pow(dist0_ / dist,2);
 			ratio = ratio>ratio_limit ? ratio_limit : ratio;
 			cost += pow(dist - dist1_, 2) * ratio;
 			gradient[i-1] += 2.0 * ratio * (dist - dist1_) * 1 / 6 * dist_grad;
@@ -233,7 +259,7 @@ void BsplineOptimizer::calcDistanceCost(const vector<Eigen::Vector3d>& q, double
 			gradient[i+1] += 2.0 * (dist - dist1_) * 1 / 6 * dist_grad;
 		}
 	}
-    
+    // if (cost > 0.0) cout << "bspline_optimizer: distance_cost: " << cost << endl;
   }
 }
 
@@ -371,14 +397,14 @@ void BsplineOptimizer::combineCost(const std::vector<double>& x, std::vector<dou
 
   /* ---------- print cost ---------- */
   iter_num_ += 1;
-/*
-  if (iter_num_ % 100 == 0)
+
+  if (iter_num_ % 100 == 0 && f_distance*f_smoothness*f_feasibility*f_endpoint*f_tensile>-1e-4)
   {
-    cout << iter_num_ << " smooth: " << lamda1_ * f_smoothness << " , dist: " << lamda2_ * f_distance
-         << ", fea: " << lamda3_ * f_feasibility << ", end: " << lamda4_ * f_endpoint << ", total: " << f_combine
+    cout << " smooth: " << lamda1_ * f_smoothness << " , dist: " << lamda2_ * f_distance
+         << ", fea: " << lamda3_ * f_feasibility << ", end: " << lamda4_ * f_endpoint <<  ", tensile: " << lamda5_ * f_tensile <<  ", total: " << f_combine
          << endl;
   }
-*/
+
 }
 
 double BsplineOptimizer::costFunction(const std::vector<double>& x, std::vector<double>& grad, void* func_data)
