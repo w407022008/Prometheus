@@ -64,8 +64,8 @@
 	<!-- 定义传感器TF transform -->
 	<include file="$(find prometheus_gazebo)/launch_basic/tf_transform.launch">
 		<arg name="x" value="$(arg x)"/>
-    		<arg name="y" value="$(arg y)"/>
-    		<arg name="z" value="$(arg z)"/>
+		<arg name="y" value="$(arg y)"/>
+		<arg name="z" value="$(arg z)"/>
 	</include>
 
 	<!-- 启动Prometheus代码 -->

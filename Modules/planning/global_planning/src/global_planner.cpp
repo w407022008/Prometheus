@@ -12,9 +12,9 @@ void Global_Planner::init(ros::NodeHandle& nh)
     // 选择算法，　0 代表A_star; 1 代表混合A_star
     nh.param("global_planner/algorithm_mode", algorithm_mode, 0); 
     // TRUE代表2D平面规划及搜索,FALSE代表3D 
-    nh.param("global_planner/is_2D", is_2D, true); 
+    nh.param("global_planner/is_2D", is_2D, false); 
     // 如果采用2维Lidar，需要一定的yawRate来探测地图
-    nh.param("global_planner/control_yaw_flag", control_yaw_flag, true); 
+    nh.param("global_planner/control_yaw_flag", control_yaw_flag, false); 
     // 2D规划时,定高高度
     nh.param("global_planner/fly_height_2D", fly_height_2D, 1.0);  
     // 安全距离，若膨胀距离设置已考虑安全距离，建议此处设为0
@@ -172,8 +172,8 @@ void Global_Planner::goal_cb(const geometry_msgs::PoseStampedConstPtr& msg)
         goal_pos << msg->pose.position.x, msg->pose.position.y, fly_height_2D;
     }else
     {
-        if(msg->pose.position.z < 0.5)
-            goal_pos << msg->pose.position.x, msg->pose.position.y, 0.5; // 最低要求
+        if(msg->pose.position.z < 1.0)
+            goal_pos << msg->pose.position.x, msg->pose.position.y, 1.0; // 最低要求
         else
             goal_pos << msg->pose.position.x, msg->pose.position.y, msg->pose.position.z;
     }
@@ -431,7 +431,7 @@ void Global_Planner::track_path_cb(const ros::TimerEvent& e)
 		        if (fabs(desired_yaw-next_desired_yaw_vel)<M_PI)
 		        	desired_yaw = (0.3*desired_yaw + 0.7*next_desired_yaw_vel);
 		        else
-		        	desired_yaw = 2*next_desired_yaw_vel-(0.3*desired_yaw + 0.7*next_desired_yaw_vel);
+		        	desired_yaw = next_desired_yaw_vel + sign(next_desired_yaw_vel) * 0.3/(0.3+0.7)*(2*M_PI-fabs(desired_yaw-next_desired_yaw_vel));
 		    } else {
 		        desired_yaw = desired_yaw + 0.05;
 		    }

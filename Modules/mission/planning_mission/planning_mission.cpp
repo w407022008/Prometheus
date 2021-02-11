@@ -269,7 +269,7 @@ void Fast_planner()
 			if (fabs(desired_yaw-next_desired_yaw_vel)<M_PI)
             	desired_yaw = (0.3*desired_yaw + 0.7*next_desired_yaw_vel);
             else
-            	desired_yaw = 2*next_desired_yaw_vel-(0.3*desired_yaw + 0.7*next_desired_yaw_vel);
+            	desired_yaw = next_desired_yaw_vel + sign(next_desired_yaw_vel) * 0.3/(0.3+0.7)*(2*M_PI-fabs(desired_yaw-next_desired_yaw_vel));
         } else {
         	desired_yaw = desired_yaw + 0.5;//M_PI*(ros::Time::now()-TimeNow).toSec();
         }

@@ -1,4 +1,5 @@
 #include <occupy_map.h>
+#include <time.h>
 
 namespace Global_Planning
 {
@@ -6,7 +7,16 @@ namespace Global_Planning
 void Occupy_map::init(ros::NodeHandle& nh)
 {
     // TRUE代表2D平面规划及搜索,FALSE代表3D 
-    nh.param("global_planner/is_2D", is_2D, true); 
+    nh.param("global_planner/is_2D", is_2D, false); 
+    nh.param("global_planner/is_rgbd", is_rgbd, false); 
+    nh.param("global_planner/is_lidar", is_lidar, false); 
+    if (is_2D) {
+    	is_rgbd = false; is_lidar = false;
+    }
+    nh.param("global_planner/ground_removal", flag_pcl_ground_removal, false);
+    nh.param("global_planner/max_ground_height", max_ground_height, 0.1);
+    nh.param("global_planner/downsampling", flag_pcl_downsampling, false);
+    nh.param("global_planner/timeSteps_fusingSamples", timeSteps_fusingSamples, 4);
     // 2D规划时,定高高度
     nh.param("global_planner/fly_height_2D", fly_height_2D, 1.0);
     // 地图原点
@@ -56,23 +66,224 @@ void Occupy_map::init(ros::NodeHandle& nh)
 void Occupy_map::map_update_gpcl(const sensor_msgs::PointCloud2ConstPtr & global_point)
 {
     has_global_point = true;
-    global_env_ = global_point;
+    global_env_ = *global_point;
 }
 
 // 地图更新函数 - 输入：RGBD相机、三维激光雷达
 void Occupy_map::map_update_lpcl(const sensor_msgs::PointCloud2ConstPtr & local_point, const nav_msgs::Odometry & odom)
 {
+    /* need odom_ for center radius sensing */
+    if ((odom.header.stamp - ros::Time::now()).toSec() > 0.01 || (!is_rgbd && !is_lidar)) 
+    {
+    	cout << "odom: Time out" << endl;
+        return;
+    }
+
     has_global_point = true;
-// 待江涛更新
-// 将传递过来的局部点云转为全局点云
+
+	tf::StampedTransform transform;
+	if (is_rgbd)
+		try{
+			tfListener.waitForTransform("/map","/realsense_camera_link",ros::Time(0),ros::Duration(4.0));
+			tfListener.lookupTransform("/map", "/realsense_camera_link", ros::Time(0), transform);
+		}
+			catch (tf::TransformException ex){
+			ROS_ERROR("%s",ex.what());
+			ros::Duration(1.0).sleep();
+		}
+
+	if (is_lidar)
+		try{
+			tfListener.waitForTransform("/map","/3Dlidar_link",ros::Time(0),ros::Duration(4.0));
+			tfListener.lookupTransform("/map", "/3Dlidar_link", ros::Time(0), transform);
+		}
+			catch (tf::TransformException ex){
+			ROS_ERROR("%s",ex.what());
+			ros::Duration(1.0).sleep();
+		}
+	
+	
+	tf::Quaternion q = transform.getRotation();
+	tf::Vector3 Origin = tf::Vector3(transform.getOrigin().getX(),transform.getOrigin().getY(),transform.getOrigin().getZ());
+
+
+//    tf::Quaternion q;
+//    tf::quaternionMsgToTF(odom.pose.pose.orientation,q); 
+//	tf::Vector3 Origin = tf::Vector3(odom.pose.pose.position.x,odom.pose.pose.position.y,odom.pose.pose.position.z);
+    double roll,pitch,yaw;
+    tf::Matrix3x3(q).getRPY(roll,pitch,yaw);
+    Eigen::Matrix3f Rotation = get_rotation_matrix(roll, pitch, yaw);
+
+
+
+
+	pcl::PointCloud<pcl::PointXYZ> latest_local_pcl_;
+	pcl::fromROSMsg(*local_point, latest_local_pcl_);
+	
+    pcl::PointCloud<pcl::PointXYZ> _pointcloud;
+
+    _pointcloud.clear();
+    pcl::PointXYZ newPoint;
+    Eigen::Vector3f _laser_point_body_body_frame,_laser_point_body_ENU_frame;
+    
+    for (int i = 0; i < (int)latest_local_pcl_.points.size(); i++)
+    {
+        _laser_point_body_body_frame[0] = latest_local_pcl_.points[i].x;
+        _laser_point_body_body_frame[1] = latest_local_pcl_.points[i].y;
+        _laser_point_body_body_frame[2] = latest_local_pcl_.points[i].z;
+        _laser_point_body_ENU_frame = Rotation * _laser_point_body_body_frame;
+        newPoint.x = Origin.getX() + _laser_point_body_ENU_frame[0];
+        newPoint.y = Origin.getY() + _laser_point_body_ENU_frame[1];
+        newPoint.z = Origin.getZ() + _laser_point_body_ENU_frame[2];
+
+        _pointcloud.push_back(newPoint);
+    }
+		
+	pcl::PassThrough<pcl::PointXYZ> ground_removal;
+	ground_removal.setInputCloud (_pointcloud.makeShared());
+	ground_removal.setFilterFieldName ("z");
+	ground_removal.setFilterLimits (origin_(2), map_size_3d_(2));
+	ground_removal.setFilterLimitsNegative (false);
+	ground_removal.filter (_pointcloud);
+	ground_removal.setInputCloud (_pointcloud.makeShared());
+	ground_removal.setFilterFieldName ("y");
+	ground_removal.setFilterLimits (origin_(1), map_size_3d_(1));
+	ground_removal.setFilterLimitsNegative (false);
+	ground_removal.filter (_pointcloud);
+	ground_removal.setInputCloud (_pointcloud.makeShared());
+	ground_removal.setFilterFieldName ("x");
+	ground_removal.setFilterLimits (origin_(0), map_size_3d_(0));
+	ground_removal.setFilterLimitsNegative (false);
+	ground_removal.filter (_pointcloud);
+	
+//	cout << "point cloud size: " << ", " << (int)_pointcloud.points.size();
+	if(flag_pcl_ground_removal){
+		pcl::PassThrough<pcl::PointXYZ> ground_removal;
+		ground_removal.setInputCloud (_pointcloud.makeShared());
+		ground_removal.setFilterFieldName ("z");
+		ground_removal.setFilterLimits (-1.0, max_ground_height);
+		ground_removal.setFilterLimitsNegative (true);
+		ground_removal.filter (_pointcloud);
+	}
+	
+	if (flag_pcl_downsampling){
+		pcl::VoxelGrid<pcl::PointXYZ> sor;
+		sor.setInputCloud(_pointcloud.makeShared());
+		sor.setLeafSize(resolution_, resolution_, resolution_);
+		sor.filter(_pointcloud);
+	}
+//	cout << " to " << (int)_pointcloud.points.size() << endl;
+	
+	local_point_cloud += _pointcloud;
+
+	if (local_point_cloud.points.size()>10000){
+		pcl::VoxelGrid<pcl::PointXYZ> sor;
+		sor.setInputCloud(local_point_cloud.makeShared());
+		sor.setLeafSize(2*resolution_, 2*resolution_, 2*resolution_);
+		sor.filter(local_point_cloud);
+		cout << "point cloud resize: " << (int)local_point_cloud.points.size() << endl;
+	}
+	
+	local_point_cloud.header.seq++;
+	local_point_cloud.header.stamp = (ros::Time::now ()).toNSec()/1e3;
+	local_point_cloud.header.frame_id = "/map";
+
+	pcl::toROSMsg(local_point_cloud, global_env_);
 }
 
 // 地图更新函数 - 输入：2维激光雷达
 void Occupy_map::map_update_laser(const sensor_msgs::LaserScanConstPtr & local_point, const nav_msgs::Odometry & odom)
 {
+    /* need odom_ for center radius sensing */
+    if ((odom.header.stamp - ros::Time::now()).toSec() > 0.01) 
+    {
+    	cout << "odom: Time out" << endl;
+        return;
+    }
+
     has_global_point = true;
-// 待更新
-// 将传递过来的数据转为全局点云
+
+    sensor_msgs::LaserScan::ConstPtr _laser_scan;
+
+    _laser_scan = local_point;
+
+    pcl::PointCloud<pcl::PointXYZ> _pointcloud;
+
+    _pointcloud.clear();
+    pcl::PointXYZ newPoint;
+    Eigen::Vector3f _laser_point_body_body_frame,_laser_point_body_ENU_frame;
+    double newPointAngle;
+
+    int beamNum = _laser_scan->ranges.size();
+    tf::Quaternion RQ2;
+    tf::quaternionMsgToTF(odom.pose.pose.orientation,RQ2); 
+    double roll,pitch,yaw;
+    tf::Matrix3x3(RQ2).getRPY(roll,pitch,yaw);
+    Eigen::Matrix3f R_Body_to_ENU = get_rotation_matrix(roll, pitch, yaw);
+    for (int i = 0; i < beamNum; i++)
+    {
+    	if(_laser_scan->ranges[i] < inflate_) continue;
+        newPointAngle = _laser_scan->angle_min + _laser_scan->angle_increment * i;
+        _laser_point_body_body_frame[0] = _laser_scan->ranges[i] * cos(newPointAngle);
+        _laser_point_body_body_frame[1] = _laser_scan->ranges[i] * sin(newPointAngle);
+        _laser_point_body_body_frame[2] = 0.0;
+        _laser_point_body_ENU_frame = R_Body_to_ENU * _laser_point_body_body_frame;
+        newPoint.x = odom.pose.pose.position.x + _laser_point_body_ENU_frame[0];
+        newPoint.y = odom.pose.pose.position.y + _laser_point_body_ENU_frame[1];
+        newPoint.z = odom.pose.pose.position.z + _laser_point_body_ENU_frame[2];
+        
+        _pointcloud.push_back(newPoint);
+    }	
+		
+	pcl::PassThrough<pcl::PointXYZ> ground_removal;
+	ground_removal.setInputCloud (_pointcloud.makeShared());
+	ground_removal.setFilterFieldName ("z");
+	ground_removal.setFilterLimits (origin_(2), map_size_3d_(2));
+	ground_removal.setFilterLimitsNegative (false);
+	ground_removal.filter (_pointcloud);
+	ground_removal.setInputCloud (_pointcloud.makeShared());
+	ground_removal.setFilterFieldName ("y");
+	ground_removal.setFilterLimits (origin_(1), map_size_3d_(1));
+	ground_removal.setFilterLimitsNegative (false);
+	ground_removal.filter (_pointcloud);
+	ground_removal.setInputCloud (_pointcloud.makeShared());
+	ground_removal.setFilterFieldName ("x");
+	ground_removal.setFilterLimits (origin_(0), map_size_3d_(0));
+	ground_removal.setFilterLimitsNegative (false);
+	ground_removal.filter (_pointcloud);
+	
+	if(flag_pcl_ground_removal){
+		
+		pcl::PassThrough<pcl::PointXYZ> ground_removal;
+		ground_removal.setInputCloud (_pointcloud.makeShared());
+		ground_removal.setFilterFieldName ("z");
+		ground_removal.setFilterLimits (-1.0, max_ground_height);
+		ground_removal.setFilterLimitsNegative (true);
+		ground_removal.filter (_pointcloud);
+	}
+	
+	if (flag_pcl_downsampling){
+		pcl::VoxelGrid<pcl::PointXYZ> sor;
+		sor.setInputCloud(_pointcloud.makeShared());
+		sor.setLeafSize(resolution_, resolution_, resolution_);
+		sor.filter(_pointcloud);
+	}
+
+	
+	local_point_cloud += _pointcloud;
+
+	if (local_point_cloud.points.size()>10000){
+		pcl::VoxelGrid<pcl::PointXYZ> sor;
+		sor.setInputCloud(local_point_cloud.makeShared());
+		sor.setLeafSize(2*resolution_, 2*resolution_, 2*resolution_);
+		sor.filter(local_point_cloud);
+	}
+	
+	local_point_cloud.header.seq++;
+	local_point_cloud.header.stamp = (ros::Time::now ()).toNSec()/1e3;
+	local_point_cloud.header.frame_id = "/map";
+
+	pcl::toROSMsg(local_point_cloud, global_env_);
 }
 
 // 当global_planning节点接收到点云消息更新时，进行设置点云指针并膨胀
@@ -86,14 +297,14 @@ void Occupy_map::inflate_point_cloud(void)
     }
 
     // 发布未膨胀点云
-    global_pcl_pub.publish(*global_env_);
+    global_pcl_pub.publish(global_env_);
 
     //记录开始时间
     ros::Time time_start = ros::Time::now();
 
     // 转化为PCL的格式进行处理
     pcl::PointCloud<pcl::PointXYZ> latest_global_cloud_;
-    pcl::fromROSMsg(*global_env_, latest_global_cloud_);
+    pcl::fromROSMsg(global_env_, latest_global_cloud_);
 
     //printf("time 1 take %f [s].\n",   (ros::Time::now()-time_start).toSec());
 

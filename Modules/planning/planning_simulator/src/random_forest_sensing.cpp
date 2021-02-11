@@ -183,21 +183,21 @@ int main(int argc, char** argv)
 void RandomMapGenerate()
 {
   pcl::PointXYZ pt_random;
-  vector<Eigen::Vector2d> obs_position;
+  vector<Eigen::Vector3d> obs_position;
 
   // uniform_real_distribution函数：
   rand_x = uniform_real_distribution<double>(map_x_0, map_x_1);
   rand_y = uniform_real_distribution<double>(map_y_0, map_y_1);
   rand_w = uniform_real_distribution<double>(_w_l, _w_h);
   rand_h = uniform_real_distribution<double>(_h_l, _h_h);
-  // 随机膨胀系数 暂时不使用
-  rand_inf = uniform_real_distribution<double>(0.5, 1.5);
 
   rand_radius = uniform_real_distribution<double>(radius_l_, radius_h_);
-  rand_radius2 = uniform_real_distribution<double>(radius_l_, 1.2);
+  rand_radius2 = uniform_real_distribution<double>(radius_l_, radius_h_);
   rand_theta = uniform_real_distribution<double>(-theta_, theta_);
   rand_z = uniform_real_distribution<double>(z_l_, z_h_);
-
+  // 随机膨胀系数 暂时不使用
+  rand_inf = uniform_real_distribution<double>(0.5, 1.5);
+  
   //  循环生成柱子障碍物
   for (int i = 0; i < _pillar_num; i++)
   {
@@ -215,7 +215,7 @@ void RandomMapGenerate()
     // 如果障碍物与之前障碍物距离过近，则跳过
     bool flag_continue = false;
     for ( auto p : obs_position )
-      if ( (Eigen::Vector2d(x,y) - p).norm() < _min_dist)
+      if ( (Eigen::Vector3d(x,y,0.0) - p).norm() < _min_dist)
       {
         i--;
         flag_continue = true;
@@ -223,9 +223,9 @@ void RandomMapGenerate()
       }
     if ( flag_continue ) continue;
 
-    obs_position.push_back( Eigen::Vector2d(x,y) );
+    obs_position.push_back( Eigen::Vector3d(x,y,0.0) );
 
-    // 障碍物中心点坐标？
+    // 障碍物中心点
     x = floor(x / _resolution) * _resolution + _resolution / 2.0;
     y = floor(y / _resolution) * _resolution + _resolution / 2.0;
 
@@ -262,20 +262,37 @@ void RandomMapGenerate()
     y = rand_y(eng);
     z = rand_z(eng);
 
-    // 坐标
+    // 如果障碍物距离无人机初始位置 过近，则跳过
+    if (sqrt(pow(x - _init_x, 2) + pow(y - _init_y, 2)) < _min_dist)
+      continue;
+
+    // 如果障碍物与之前障碍物距离过近，则跳过
+    bool flag_continue = false;
+    for ( auto p : obs_position )
+      if ( (Eigen::Vector3d(x,y,z) - p).norm() < _min_dist)
+      {
+        i--;
+        flag_continue = true;
+        break;
+      }
+    if ( flag_continue ) continue;
+
+    obs_position.push_back( Eigen::Vector3d(x,y,z) );
+
+    // 障碍物中心点
     x = floor(x / _resolution) * _resolution + _resolution / 2.0;
     y = floor(y / _resolution) * _resolution + _resolution / 2.0;
     z = floor(z / _resolution) * _resolution + _resolution / 2.0;
 
     Eigen::Vector3d translate(x, y, z);
 
-    // 偏转角度？
+    // 随机z轴旋转
     double theta = rand_theta(eng);
     Eigen::Matrix3d rotate;
     rotate << cos(theta), -sin(theta), 0.0, sin(theta), cos(theta), 0.0, 0, 0,
         1;
 
-    // 内、外径
+    // 椭圆长短径
     double radius1 = rand_radius(eng);
     double radius2 = rand_radius2(eng);
 
@@ -287,11 +304,10 @@ void RandomMapGenerate()
       cpt(1) = radius1 * cos(angle);
       cpt(2) = radius2 * sin(angle);
 
-      // inflate
       Eigen::Vector3d cpt_if;
-      for (int ifx = -0; ifx <= 0; ++ifx)
-        for (int ify = -0; ify <= 0; ++ify)
-          for (int ifz = -0; ifz <= 0; ++ifz) {
+      for (int ifx = -1; ifx <= 1; ++ifx)
+        for (int ify = -1; ify <= 1; ++ify)
+          for (int ifz = -1; ifz <= 1; ++ifz) {
             cpt_if = cpt + Eigen::Vector3d(ifx * _resolution, ify * _resolution,
                                            ifz * _resolution);
             cpt_if = rotate * cpt_if + Eigen::Vector3d(x, y, z);

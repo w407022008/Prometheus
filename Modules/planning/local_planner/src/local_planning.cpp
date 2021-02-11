@@ -1,5 +1,6 @@
 #include "local_planning.h"
 #include <string> 	
+#include <time.h>
 
 namespace Local_Planning
 {
@@ -13,13 +14,22 @@ void Local_Planner::init(ros::NodeHandle& nh)
     nh.param("local_planner/planner_enable", planner_enable_default, false);
     // 根据参数 planning/algorithm_mode 选择局部避障算法: [0]: APF,[1]: VFH
     nh.param("local_planner/algorithm_mode", algorithm_mode, 0);
-    // 激光雷达模型,0代表3d雷达,1代表2d雷达
-    // [0]: 3d雷达输入类型为 <sensor_msgs::PointCloud2>; [1]: 2d雷达输入类型为 <sensor_msgs::LaserScan>
-    nh.param("local_planner/lidar_model", lidar_model, 0);
+	// 0代表建图数据类型octomap<sensor_msgs::PointCloud2>,1代表2d传感器数据类型<sensor_msgs::LaserScan>,2代表3d传感器数据类型<sensor_msgs::PointCloud2>
+    nh.param("local_planner/map_input", map_input, 0);
+    nh.param("local_planner/ground_removal", flag_pcl_ground_removal, false);
+    nh.param("local_planner/max_ground_height", max_ground_height, 0.1);
+    nh.param("local_planner/downsampling", flag_pcl_downsampling, false);
+    nh.param("local_planner/resolution", size_of_voxel_grid, 0.1);
+    nh.param("local_planner/timeSteps_fusingSamples", timeSteps_fusingSamples, 4);
     // TRUE代表2D平面规划及搜索,FALSE代表3D 
-    nh.param("local_planner/is_2D", is_2D, true); 
+    nh.param("local_planner/is_2D", is_2D, false); 
+    nh.param("local_planner/is_rgbd", is_rgbd, false); 
+    nh.param("local_planner/is_lidar", is_lidar, false); 
+    if (is_2D) {
+    	is_rgbd = false; is_lidar = false;
+    }
     // 如果采用2维Lidar，需要一定的yawRate来探测地图
-    nh.param("local_planner/control_yaw_flag", control_yaw_flag, true); 
+    nh.param("local_planner/control_yaw_flag", control_yaw_flag, false); 
     // 2D规划时,定高高度
     nh.param("local_planner/fly_height_2D", fly_height_2D, 1.0);  
     // 是否为仿真模式
@@ -38,12 +48,15 @@ void Local_Planner::init(ros::NodeHandle& nh)
     drone_state_sub = nh.subscribe<prometheus_msgs::DroneState>("/prometheus/drone_state", 10, &Local_Planner::drone_state_cb, this);
 
     // 订阅传感器点云信息,该话题名字可在launch文件中任意指定
-    if (lidar_model == 0)
+    if (map_input == 0)
     {
         local_point_clound_sub = nh.subscribe<sensor_msgs::PointCloud2>("/prometheus/planning/local_pcl", 1, &Local_Planner::localcloudCallback, this);
-    }else if (lidar_model == 1)
+    }else if (map_input == 1)
     {
         local_point_clound_sub = nh.subscribe<sensor_msgs::LaserScan>("/prometheus/planning/local_pcl", 1, &Local_Planner::Callback_2dlaserscan, this);
+    }else if (map_input == 2)
+    {
+        local_point_clound_sub = nh.subscribe<sensor_msgs::PointCloud2>("/prometheus/planning/local_pcl", 1, &Local_Planner::Callback_3dpointcloud, this);
     }
 
     // 发布 期望速度
@@ -54,6 +67,9 @@ void Local_Planner::init(ros::NodeHandle& nh)
 
     // 发布速度用于显示
     rviz_vel_pub = nh.advertise<geometry_msgs::Point>("/prometheus/local_planner/desired_vel", 10); 
+    
+    // 发布局部点云用于显示
+    point_cloud_pub = nh.advertise<pcl::PointCloud<pcl::PointXYZ>>("/prometheus/local_planner/local_point_cloud", 10); 
 
     // 定时函数,执行周期为1Hz
     mainloop_timer = nh.createTimer(ros::Duration(0.2), &Local_Planner::mainloop_cb, this);
@@ -254,12 +270,163 @@ void Local_Planner::Callback_2dlaserscan(const sensor_msgs::LaserScanConstPtr &m
         
         _pointcloud.push_back(newPoint);
     }
+	concatenate_PointCloud += _pointcloud;
+	
+	static int frame_id = 0;
+	if (frame_id == timeSteps_fusingSamples){
+		cout << "point cloud size: " << ", " << (int)concatenate_PointCloud.points.size();
+		if(flag_pcl_ground_removal){
+			
+			pcl::PassThrough<pcl::PointXYZ> ground_removal;
+			ground_removal.setInputCloud (concatenate_PointCloud.makeShared());
+			ground_removal.setFilterFieldName ("z");
+			ground_removal.setFilterLimits (-1.0, max_ground_height);
+			ground_removal.setFilterLimitsNegative (true);
+			ground_removal.filter (concatenate_PointCloud);
+		}
+		
+		if (flag_pcl_downsampling){
+			pcl::VoxelGrid<pcl::PointXYZ> sor;
+			sor.setInputCloud(concatenate_PointCloud.makeShared());
+			sor.setLeafSize(size_of_voxel_grid, size_of_voxel_grid, size_of_voxel_grid);
+			sor.filter(concatenate_PointCloud);
+		}
+		cout << " to " << (int)concatenate_PointCloud.points.size() << endl;
+		
+		local_point_cloud = concatenate_PointCloud;
+		frame_id = 0;
+		concatenate_PointCloud.clear();
+	} else {
+		local_point_cloud = local_point_cloud;
+		frame_id++;
+	}
 
-    pcl_ptr = _pointcloud.makeShared();
+	local_point_cloud.header.seq++;
+	local_point_cloud.header.stamp = (ros::Time::now ()).toNSec()/1e3;
+	local_point_cloud.header.frame_id = "/map";
+	point_cloud_pub.publish(local_point_cloud);
+
+	pcl_ptr = local_point_cloud.makeShared();
     local_alg_ptr->set_local_map_pcl(pcl_ptr);
+}
 
+void Local_Planner::Callback_3dpointcloud(const sensor_msgs::PointCloud2ConstPtr &msg)
+{
+    /* need odom_ for center radius sensing */
+    if (!odom_ready || (!is_rgbd && !is_lidar)) 
+    {
+        return;
+    }
 
-    latest_local_pcl_ = *pcl_ptr; // World-ENU
+	tf::StampedTransform transform;
+	if (is_rgbd)
+		try{
+			tfListener.waitForTransform("/map","/realsense_camera_link",ros::Time(0),ros::Duration(4.0));
+			tfListener.lookupTransform("/map", "/realsense_camera_link", ros::Time(0), transform);
+		}
+			catch (tf::TransformException ex){
+			ROS_ERROR("%s",ex.what());
+			ros::Duration(1.0).sleep();
+		}
+
+	if (is_lidar)
+		try{
+			tfListener.waitForTransform("/map","/3Dlidar_link",ros::Time(0),ros::Duration(4.0));
+			tfListener.lookupTransform("/map", "/3Dlidar_link", ros::Time(0), transform);
+		}
+			catch (tf::TransformException ex){
+			ROS_ERROR("%s",ex.what());
+			ros::Duration(1.0).sleep();
+		}
+	
+	tf::Quaternion q = transform.getRotation();
+	tf::Matrix3x3 Rotation(q);
+
+    sensor_ready = true;
+
+	pcl::fromROSMsg(*msg, latest_local_pcl_);
+	
+//	cout << "point_size: " << (int)latest_local_pcl_.points.size() << endl;
+//	cout << "point 1: " << latest_local_pcl_.points[0].x << ", " << latest_local_pcl_.points[0].y << ", " << latest_local_pcl_.points[0].z << endl;
+
+	
+    pcl::PointCloud<pcl::PointXYZ> _pointcloud;
+
+    _pointcloud.clear();
+    pcl::PointXYZ newPoint;
+    tf::Vector3 _laser_point_body_body_frame,_laser_point_body_ENU_frame;
+    
+    for (int i = 0; i < (int)latest_local_pcl_.points.size(); i++)
+    {
+        _laser_point_body_body_frame[0] = latest_local_pcl_.points[i].x;
+        _laser_point_body_body_frame[1] = latest_local_pcl_.points[i].y;
+        _laser_point_body_body_frame[2] = latest_local_pcl_.points[i].z;
+        _laser_point_body_ENU_frame = Rotation * _laser_point_body_body_frame;
+        newPoint.x = transform.getOrigin().getX() + _laser_point_body_ENU_frame[0];
+        newPoint.y = transform.getOrigin().getY() + _laser_point_body_ENU_frame[1];
+        newPoint.z = transform.getOrigin().getZ() + _laser_point_body_ENU_frame[2];
+        
+        _pointcloud.push_back(newPoint);
+    }
+	concatenate_PointCloud += _pointcloud;
+	
+	static int frame_id = 0;
+	if (frame_id == timeSteps_fusingSamples){
+		cout << "point cloud size: " << ", " << (int)concatenate_PointCloud.points.size();
+		if(flag_pcl_ground_removal){
+			
+			pcl::PassThrough<pcl::PointXYZ> ground_removal;
+			ground_removal.setInputCloud (concatenate_PointCloud.makeShared());
+			ground_removal.setFilterFieldName ("z");
+			ground_removal.setFilterLimits (-1.0, max_ground_height);
+			ground_removal.setFilterLimitsNegative (true);
+			ground_removal.filter (concatenate_PointCloud);
+		}
+		
+		if (flag_pcl_downsampling){
+			pcl::VoxelGrid<pcl::PointXYZ> sor;
+			sor.setInputCloud(concatenate_PointCloud.makeShared());
+			sor.setLeafSize(size_of_voxel_grid, size_of_voxel_grid, size_of_voxel_grid);
+			sor.filter(concatenate_PointCloud);
+		}
+		cout << " to " << (int)concatenate_PointCloud.points.size() << endl;
+		
+		local_pcl_tm1 = concatenate_PointCloud;
+		frame_id = 0;
+		concatenate_PointCloud.clear();
+		
+		local_point_cloud = local_pcl_tm1;
+		local_point_cloud += local_pcl_tm2;
+		local_point_cloud += local_pcl_tm3;
+		local_pcl_tm3 = local_pcl_tm2;
+		local_pcl_tm2 = local_pcl_tm1;
+		local_pcl_tm1.clear();
+	} else {
+		local_point_cloud = local_point_cloud;
+		frame_id++;
+	}
+
+	
+	local_point_cloud.header = latest_local_pcl_.header;
+	local_point_cloud.header.frame_id = "/map";
+//	local_point_cloud.height = 1;
+//	local_point_cloud.width = local_point_cloud.points.size();
+	point_cloud_pub.publish(local_point_cloud);
+
+	
+//	cout << "Rotation: " << endl;
+//	cout << "[ [" << Rotation[0][0] << ", " << Rotation[0][1] << ", " << Rotation[0][2] << "]," << endl;
+//	cout << "  [" << Rotation[1][0] << ", " << Rotation[1][1] << ", " << Rotation[1][2] << "]," << endl;
+//	cout << "  [" << Rotation[2][0] << ", " << Rotation[2][1] << ", " << Rotation[2][2] << "] ]" << endl;
+//	cout << "point_size: " << (int)local_point_cloud.points.size() << endl;
+//	cout << "header.seq: " << (int)local_point_cloud.header.seq << endl;
+//	cout << "header.stamp: " << (int)local_point_cloud.header.stamp << endl;
+//	cout << "header.frame_id: " << local_point_cloud.header.frame_id << endl;
+//	cout << "height: " << (int)local_point_cloud.height << endl;
+//	cout << "width: " << (int)local_point_cloud.width << endl;
+
+	pcl_ptr = local_point_cloud.makeShared();
+    local_alg_ptr->set_local_map_pcl(pcl_ptr);
 }
 
 void Local_Planner::localcloudCallback(const sensor_msgs::PointCloud2ConstPtr &msg)
@@ -274,9 +441,6 @@ void Local_Planner::localcloudCallback(const sensor_msgs::PointCloud2ConstPtr &m
 
     local_map_ptr_ = msg;
     local_alg_ptr->set_local_map(local_map_ptr_);
-
-
-    //pcl::fromROSMsg(*msg, latest_local_pcl_);
 }
 
 void Local_Planner::control_cb(const ros::TimerEvent& e)
@@ -370,10 +534,12 @@ void Local_Planner::control_cb(const ros::TimerEvent& e)
         if( sqrt( ref_vel[1]* ref_vel[1] + ref_vel[0]* ref_vel[0])  >  0.05  )
         {
         	float next_desired_yaw_vel = sign(ref_vel(1)) * acos(ref_vel(0) / ref_vel.norm());
+//			cout << "desired_yaw " << desired_yaw << ", next_desired_yaw_vel " << next_desired_yaw_vel << endl;
+	
             if (fabs(desired_yaw-next_desired_yaw_vel)<M_PI)
             	desired_yaw = (0.3*desired_yaw + 0.7*next_desired_yaw_vel);
             else
-            	desired_yaw = 2*next_desired_yaw_vel-(0.3*desired_yaw + 0.7*next_desired_yaw_vel);
+            	desired_yaw = next_desired_yaw_vel + sign(next_desired_yaw_vel) * 0.3/(0.3+0.7)*(2*M_PI-fabs(desired_yaw-next_desired_yaw_vel));
         } else {
             desired_yaw = desired_yaw + 0.05;
         }

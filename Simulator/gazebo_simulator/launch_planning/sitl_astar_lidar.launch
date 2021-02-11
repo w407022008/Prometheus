@@ -5,9 +5,10 @@
 	<arg name="z" default="0"/>
 	<arg name="gazebo_gui" default="false"/>
 	<arg name="visualization" default="true"/>
-	<arg name="is_2DLidar" default="false"/> <!--建议还是A*用2d的，不卡-->
-	<arg name="setup_rtabmap" default="false" />
 	<arg name="type_in_goal" default="false"/>
+	
+	<arg name="is_2DLidar" default="false"/>
+	<arg name="mapper_enable" default="false" />  <!-- true: 使用建图数据; false: 使用传感器原始数据 -->
 
 	<arg name="vehicle_2Dlidar" default="amov_solo_hokuyo_2Dlidar"/>
 	<arg name="vehicle_3Dlidar" default="amov_solo_3Dlidar"/>
@@ -24,11 +25,12 @@
 			<arg name="y" value="$(arg y)"/>
 			<arg name="z" value="$(arg z)"/>
 		</include>
+		
 		<!-- run the laser_to_pointcloud -->
-		<node pkg="prometheus_gazebo" type="laser_to_pointcloud.py" name="laser_to_pointcloud" >
+		<node if="$(arg mapper_enable)" pkg="prometheus_gazebo" type="laser_to_pointcloud.py" name="laser_to_pointcloud" >
 		</node>
 		<!-- 启动octomap建图 -->
-		<node pkg="octomap_server" type="octomap_server_node" name="octomap_server">
+		<node if="$(arg mapper_enable)" pkg="octomap_server" type="octomap_server_node" name="octomap_server">
 			<param name="resolution" value="0.1" />
 			<!-- 发布地图的坐标系 -->
 			<param name="frame_id" type="string" value="world" />
@@ -37,7 +39,51 @@
 			<!-- 局部点云输入 -->
 			<remap from="cloud_in" to="/prometheus/sensors/pcl2" />
 		</node>
+		
+		<!-- 启动全局规划算法 -->
+		<node pkg="prometheus_global_planning" name="global_planner_main" type="global_planner_main" output="screen" launch-prefix="gnome-terminal --tab --">
+			<!-- 如果直接使用  GroundTruth 点云输入 -->
+			<!-- <remap from="/prometheus/global_planning/global_pcl" to="/prometheus/pcl_groundtruth" />-->
+			<remap if="$(arg mapper_enable)" from="/prometheus/global_planning/global_pcl" to="/octomap_point_cloud_centers" />
+			<remap unless="$(arg mapper_enable)" from="/prometheus/global_planning/laser_scan" to="/prometheus/sensors/2Dlidar_scan" />
+
+			<!-- 0: A_star; 1: hybrid A_star -->
+			<param name="global_planner/algorithm_mode" value="0" type="int"/>
+			<param name="global_planner/sim_mode" value="true" type="bool"/>
+			<param name="global_planner/planner_enable" value="true" type="bool"/>
+			<!-- 二维平面规划 -->
+			<param name="global_planner/is_2D" value="true" type="bool"/> <!-- 最好是，免得往z轴上跑 -->
+			<param name="global_planner/control_yaw_flag" value="true" type="bool"/> <!-- 如果使用 2dLidar 就需要自旋以感知地图 -->
+			<!-- ２维高度，建议与起飞高度一致 -->
+			<param name="global_planner/fly_height_2D" value="1.0" type="double"/>
+			<!-- 停止距离 -->
+			<param name="global_planner/safe_distance" value="0.01" type="double"/> <!-- 若膨胀距离map/inflate设置已考虑安全距离，建议此处设为0 -->
+			<param name="global_planner/time_per_path" value="0.5" type="double"/> <!-- 路径追踪执行频率 -->
+			<param name="global_planner/replan_time" value="10.0" type="double"/> <!-- 重规划频率 -->
+			<!-- 0:groundtruth点云、SLAM全局点云生成; 1:RGBD相机、三维激光雷达传感器数据输入; 2:2维激光雷达传感器数据输入 -->
+			<param if="$(arg mapper_enable)" name="global_planner/map_input" value="0" type="int"/>
+			<param unless="$(arg mapper_enable)" name="global_planner/map_input" value="2" type="int"/>
+			<param name="global_planner/ground_removal" value="true" type="bool"/>
+			<param name="global_planner/max_ground_height" value="0.2" type="double"/>
+			<param name="global_planner/downsampling" value="true" type="bool"/>
+			<!-- 最大搜索步数 -->
+			<param name="astar/allocate_num" value="10000" type="int"/>
+			<!-- 启发式函数系数 -->
+			<param name="astar/lambda_heu" value="2.0" type="double"/>
+			<!-- 分辨率 -->
+			<param name="map/resolution" value="0.2" type="double"/>
+			<!-- 障碍物膨胀距离 -->
+			<param name="map/inflate" value="0.8" type="double"/>
+			<!-- 地图范围 -->
+			<param name="map/origin_x" value="-15.0" type="double"/>
+			<param name="map/origin_y" value="-15.0" type="double"/>
+			<param name="map/origin_z" value="0.2" type="double"/>
+			<param name="map/map_size_x" value="30.0" type="double"/>
+			<param name="map/map_size_y" value="30.0" type="double"/>
+			<param name="map/map_size_z" value="3.0" type="double"/>
+		</node>
 	</group>
+	
 	<group unless="$(arg is_2DLidar)">
 		<include file="$(find prometheus_gazebo)/launch_basic/sitl.launch">
 			<arg name="gazebo_gui" value="$(arg gazebo_gui)"/>
@@ -48,8 +94,9 @@
 			<arg name="y" value="$(arg y)"/>
 			<arg name="z" value="$(arg z)"/>
 		</include>
+		
 		<!-- 启动 octomap 建图 -->
-		<node unless="$(arg setup_rtabmap)" pkg="octomap_server" type="octomap_server_node" name="octomap_server">
+		<node if="$(arg mapper_enable)" pkg="octomap_server" type="octomap_server_node" name="octomap_server">
 			<param name="resolution" value="0.1" />
 			<!-- fixed map frame (set to 'map' if SLAM or localization running!) -->
 			<param name="frame_id" type="string" value="map" />
@@ -58,76 +105,50 @@
 			<!-- data source to integrate (PointCloud2) -->
 			<remap from="cloud_in" to="/prometheus/sensors/3Dlidar_scan" />
 		</node>
-	    	<!-- 启动rtabmap_ros建图 --> <!-- 可以订阅，需要等待，并且很卡 -->
-		<node if="$(arg setup_rtabmap)" pkg="rtabmap_ros" type="rtabmap" name="rtabmap" output="screen" args="-d">	  
-			<param name="frame_id"             type="string" value="3Dlidar_link"/>  
-			<param name="subscribe_depth"      type="bool" value="false"/>
-			<param name="subscribe_rgb"        type="bool" value="false"/>
-			<param name="subscribe_scan_cloud" type="bool" value="true"/>
-			<param name="approx_sync"          type="bool" value="true"/>
-	      		<remap from="odom"                 to="/prometheus/drone_odom"/>
-			<remap from="scan_cloud" 	   to="/prometheus/sensors/3Dlidar_scan"/>
+		
+		<!-- 启动全局规划算法 -->
+		<node pkg="prometheus_global_planning" name="global_planner_main" type="global_planner_main" output="screen" launch-prefix="gnome-terminal --tab --">
+			<!-- 如果直接使用  GroundTruth 点云输入 -->
+			<!-- <remap from="/prometheus/global_planning/global_pcl" to="/prometheus/pcl_groundtruth" />-->
+			<remap if="$(arg mapper_enable)" from="/prometheus/global_planning/global_pcl" to="/octomap_point_cloud_centers" />
+			<remap unless="$(arg mapper_enable)" from="/prometheus/global_planning/local_pcl" to="/prometheus/sensors/3Dlidar_scan" />
 
-			<!-- RTAB-Map's parameters -->
-			<param name="Rtabmap/DetectionRate"          type="string" value="1"/>  
-			<param name="RGBD/NeighborLinkRefining"      type="string" value="false"/>
-			<param name="RGBD/ProximityBySpace"          type="string" value="true"/>
-			<param name="RGBD/ProximityMaxGraphDepth"    type="string" value="0"/>
-			<param name="RGBD/ProximityPathMaxNeighbors" type="string" value="1"/>
-			<param name="RGBD/AngularUpdate"             type="string" value="0.05"/>
-			<param name="RGBD/LinearUpdate"              type="string" value="0.05"/>
-			<param name="Mem/NotLinkedNodesKept"         type="string" value="false"/>
-			<param name="Mem/STMSize"                    type="string" value="30"/>
-			<!-- param name="Mem/LaserScanVoxelSize"     type="string" value="0.1"/ -->
-			<!-- param name="Mem/LaserScanNormalK"       type="string" value="10"/ -->
-			<!-- param name="Mem/LaserScanRadius"        type="string" value="0"/ -->
-
-			<param name="Reg/Strategy"                   type="string" value="1"/> 
-			<param name="Grid/CellSize"                  type="string" value="0.1"/>
-			<param name="Grid/RangeMax"                  type="string" value="20"/>
-			<param name="Grid/ClusterRadius"             type="string" value="1"/>
-			<param name="Grid/GroundIsObstacle"          type="string" value="true"/>
+			<!-- 0: A_star; 1: hybrid A_star -->
+			<param name="global_planner/algorithm_mode" value="0" type="int"/>
+			<param name="global_planner/sim_mode" value="true" type="bool"/>
+			<param name="global_planner/planner_enable" value="true" type="bool"/>
+			<!-- 二维平面规划 -->
+			<param name="global_planner/is_lidar" value="true" type="bool"/>
+			<param name="global_planner/is_2D" value="false" type="bool"/>
+			<param name="global_planner/control_yaw_flag" value="false" type="bool"/>
+			<!-- 停止距离 -->
+			<param name="global_planner/safe_distance" value="0.01" type="double"/> <!-- 若膨胀距离map/inflate设置已考虑安全距离，建议此处设为0 -->
+			<param name="global_planner/time_per_path" value="0.5" type="double"/> <!-- 路径追踪执行频率 -->
+			<param name="global_planner/replan_time" value="10.0" type="double"/> <!-- 重规划频率 -->
+			<!-- 0:groundtruth点云、SLAM全局点云生成; 1:RGBD相机、三维激光雷达传感器数据输入; 2:2维激光雷达传感器数据输入 -->
+			<param if="$(arg mapper_enable)" name="global_planner/map_input" value="0" type="int"/>
+			<param unless="$(arg mapper_enable)" name="global_planner/map_input" value="1" type="int"/>
+			<param name="global_planner/ground_removal" value="true" type="bool"/>
+			<param name="global_planner/max_ground_height" value="0.2" type="double"/>
+			<param name="global_planner/downsampling" value="true" type="bool"/>
+			<!-- 最大搜索步数 -->
+			<param name="astar/allocate_num" value="10000" type="int"/>
+			<!-- 启发式函数系数 -->
+			<param name="astar/lambda_heu" value="2.0" type="double"/>
+			<!-- 分辨率 -->
+			<param name="map/resolution" value="0.2" type="double"/>
+			<!-- 障碍物膨胀距离 -->
+			<param name="map/inflate" value="0.8" type="double"/>
+			<!-- 地图范围 -->
+			<param name="map/origin_x" value="-15.0" type="double"/>
+			<param name="map/origin_y" value="-15.0" type="double"/>
+			<param name="map/origin_z" value="0.2" type="double"/>
+			<param name="map/map_size_x" value="30.0" type="double"/>
+			<param name="map/map_size_y" value="30.0" type="double"/>
+			<param name="map/map_size_z" value="3.0" type="double"/>
 		</node>
 	</group>
 
-	<!-- 启动全局规划算法 -->
-	<node pkg="prometheus_global_planning" name="global_planner_main" type="global_planner_main" output="screen" launch-prefix="gnome-terminal --tab --">
-		<remap     if="$(arg setup_rtabmap)" from="/prometheus/global_planning/global_pcl" to="/octomap_obstacles" />
-		<remap unless="$(arg setup_rtabmap)" from="/prometheus/global_planning/global_pcl" to="/octomap_point_cloud_centers" /> <!-- 2D 也适用-->
-		<!-- 如果直接使用  GroundTruth 点云输入 -->
-		<!-- <remap from="/prometheus/global_planning/global_pcl" to="/prometheus/pcl_groundtruth" />-->
-		<!-- 如果直接使用激光点云输入 -->
-		<!-- <remap from="/prometheus/global_planning/global_pcl" to="/prometheus/sensors/3Dlidar_scan" /> -->
-
-		<!-- 参数 -->
-		<param name="global_planner/sim_mode" value="true" type="bool"/>
-		<param name="global_planner/planner_enable" value="true" type="bool"/>
-		<!-- 二维平面规划 -->
-		<param name="global_planner/is_2D" value="$(arg is_2DLidar)" type="bool"/> <!-- 因为启动了地图服务，所以可以是否 -->
-		<param name="global_planner/control_yaw_flag" value="$(arg is_2DLidar)" type="bool"/> <!-- 如果使用 2dLidar 就需要自旋以感知地图 -->
-		<!-- ２维高度，建议与起飞高度一致 -->
-		<param name="global_planner/fly_height_2D" value="1.0" type="double"/> <!-- is_2D情况下有效 -->
-		<!-- 停止距离 -->
-		<param name="global_planner/safe_distance" value="0.01" type="double"/> <!-- 若膨胀距离map/inflate设置已考虑安全距离，建议此处设为0 -->
-		<param name="global_planner/time_per_path" value="0.3" type="double"/> <!-- 路径追踪执行频率 -->
-		<param name="global_planner/replan_time" value="10.0" type="double"/> <!-- 重规划频率 -->
-		<param name="global_planner/map_input" value="0" type="int"/> <!-- 0代表全局点云(其他的好像不行)，１代表局部点云，２代表激光雷达scan数据 -->
-		<!-- 最大搜索步数 -->
-		<param name="astar/allocate_num" value="10000" type="int"/>
-		<!-- 启发式函数系数 -->
-		<param name="astar/lambda_heu" value="2.0" type="double"/>
-		<!-- 分辨率 -->
-		<param name="map/resolution" value="0.2" type="double"/>
-		<!-- 障碍物膨胀距离 -->
-		<param name="map/inflate" value="0.8" type="double"/>
-		<!-- 地图范围 -->
-		<param name="map/origin_x" value="-15.0" type="double"/>
-		<param name="map/origin_y" value="-15.0" type="double"/>
-		<param name="map/origin_z" value="-0.5" type="double"/>
-		<param name="map/map_size_x" value="30.0" type="double"/>
-		<param name="map/map_size_y" value="30.0" type="double"/>
-		<param name="map/map_size_z" value="3.0" type="double"/>
-	</node>
 
 	<!-- terminal输入goal -->
 	<node if="$(arg type_in_goal)" pkg="prometheus_mission" type="pub_goal" name="pub_goal" output="screen" launch-prefix="gnome-terminal --tab --">	

@@ -14,6 +14,8 @@ find_package(catkin REQUIRED COMPONENTS
        std_msgs
 	   sensor_msgs
 	   geometry_msgs
+		pcl_ros
+		pcl_conversions
 	   nav_msgs
        visualization_msgs
 	   prometheus_msgs

@@ -6,6 +6,7 @@
 	<arg name="gazebo_gui" default="false"/>
 	<arg name="visualization" default="true"/>
 	<arg name="setup_rtabmap" default="false" />  <!-- rtabmap 启动特别慢 -->
+	<arg name="mapper_enable" default="false" />  <!-- true: 使用建图数据; false: 使用传感器原始数据 -->
 	<arg name="depth_mode" default="true"/><!-- rtabmap 双目、深度信息需要开启 realsense_plugin; 深度信息也可以开启 openni_kinect; octomap 点云信息可以开通 openni_kinect 或 depth_camera -->
 
 	<arg name="world" default="$(find prometheus_gazebo)/worlds/obstacle.world"/>
@@ -54,13 +55,43 @@
 			<arg name="rtabmapviz"              value="false"/>
 			<arg name="rviz"                    value="false"/>
 		</include>
+		
+		<!-- 启动局部规划算法 -->
+		<node pkg="prometheus_local_planning" name="local_planner_main" type="local_planner_main" output="screen" launch-prefix="gnome-terminal --tab --">
+			<!-- 如果直接使用  GroundTruth 点云输入 -->
+			<!-- <remap from="/prometheus/planning/local_pcl" to="/prometheus/pcl_groundtruth"/> -->
+			<remap from="/prometheus/planning/local_pcl" to="/rtabmap/cloud_map" />
+			<!-- 参数 -->
+			<param name="local_planner/sim_mode" value="true" type="bool"/>
+			<param name="local_planner/planner_enable" value="true" type="bool"/>
+			<!-- 二维平面规划 -->
+			<param name="local_planner/is_2D" value="false" type="bool"/>
+			<param name="local_planner/control_yaw_flag" value="true" type="bool"/>
+			<!-- 选择算法 0代表APF,1代表VFH -->
+			<param name="local_planner/algorithm_mode" value="1" type="int"/>
+			<!-- 0代表建图数据类型octomap<sensor_msgs::PointCloud2>,1代表2d传感器数据类型<sensor_msgs::LaserScan>,2代表3d传感器数据类型<sensor_msgs::PointCloud2> -->
+			<param name="local_planner/map_input" value="0" type="int"/>
+			<!-- 最大速度，设的越小越安全 -->
+			<param name="local_planner/max_planning_vel" value="0.5" type="double"/>
+			<!-- 膨胀参数，一般设置为无人机的半径或更大 -->
+			<param name="local_planner/inflate_distance" value="0.8" type="double"/>
+			<!-- 感知距离，只考虑感知距离内的障碍物 -->
+			<param name="local_planner/sensor_max_range" value="4.0" type="double"/>  
+			<!-- weight -->
+			<param name="vfh/obstacle_weight" value="10.0" type="double"/>
+			<param name="vfh/goalWeight" value="0.1" type="double"/>
+			<param name="vfh/safe_distance" value="0.01" type="double"/>
+			<!-- 停止距离，小于该距离，停止自动飞行 -->
+			<param name="local_planner/safe_distance" value="0.01" type="double"/>
+		</node>	
 	</group>
-    	<!-- 启动 octomap 建图 -->
+	
+    <!-- 启动 octomap 建图 -->
 	<group unless="$(arg setup_rtabmap)">
 		<!-- RGBD相机局部点云 -->
 		<!-- 如果没有，可以通过下面这个launch文件，根据RGBD生成局部点云(比较吃CPU) -->
 		<!-- <include file="$(find prometheus_gazebo)/launch_basic/depth_proc.launch"></include> -->
-		<node pkg="octomap_server" type="octomap_server_node" name="octomap_server">
+		<node if="$(arg mapper_enable)" pkg="octomap_server" type="octomap_server_node" name="octomap_server">
 			<param name="resolution" value="0.05" />
 			<!-- fixed map frame (set to 'map' if SLAM or localization running!) -->
 			<param name="frame_id" type="string" value="map" />
@@ -69,42 +100,42 @@
 			<!-- data source to integrate (PointCloud2) -->
 			<remap from="cloud_in" to="/realsense_plugin/camera/local_pointclouds" />
 		</node>
+		
+		<!-- 启动局部规划算法 -->
+		<node pkg="prometheus_local_planning" name="local_planner_main" type="local_planner_main" output="screen" launch-prefix="gnome-terminal --tab --">	
+			<!-- 如果直接使用  GroundTruth 点云输入 -->
+			<!-- <remap from="/prometheus/planning/local_pcl" to="/prometheus/pcl_groundtruth"/> -->
+			<remap if="$(arg mapper_enable)" from="/prometheus/planning/local_pcl" to="/octomap_point_cloud_centers" />
+			<remap unless="$(arg mapper_enable)" from="/prometheus/planning/local_pcl" to="/realsense_plugin/camera/local_pointclouds" />
+			<!-- 参数 -->
+			<param name="local_planner/sim_mode" value="true" type="bool"/>
+			<param name="local_planner/planner_enable" value="true" type="bool"/>
+			<!-- 二维平面规划 -->
+			<param name="local_planner/is_rgbd" value="true" type="bool"/>
+			<param name="local_planner/control_yaw_flag" value="true" type="bool"/>
+			<!-- 选择算法 0代表APF,1代表VFH -->
+			<param name="local_planner/algorithm_mode" value="1" type="int"/>
+			<!-- 0代表建图数据类型octomap<sensor_msgs::PointCloud2>,1代表2d传感器数据类型<sensor_msgs::LaserScan>,2代表3d传感器数据类型<sensor_msgs::PointCloud2> -->
+			<param if="$(arg mapper_enable)" name="local_planner/map_input" value="0" type="int"/>
+			<param unless="$(arg mapper_enable)" name="local_planner/map_input" value="2" type="int"/>
+			<param name="local_planner/ground_removal" value="true" type="bool"/>
+			<param name="local_planner/max_ground_height" value="0.3" type="double"/>
+			<param name="local_planner/downsampling" value="true" type="bool"/>
+			<param name="local_planner/resolution" value="0.1" type="double"/>
+			<!-- 最大速度，设的越小越安全 -->
+			<param name="local_planner/max_planning_vel" value="0.5" type="double"/>
+			<!-- 膨胀参数，一般设置为无人机的半径或更大 -->
+			<param name="local_planner/inflate_distance" value="0.8" type="double"/>
+			<!-- 感知距离，只考虑感知距离内的障碍物 -->
+			<param name="local_planner/sensor_max_range" value="4.0" type="double"/>  
+			<!-- weight -->
+			<param name="vfh/obstacle_weight" value="10.0" type="double"/>
+			<param name="vfh/goalWeight" value="0.1" type="double"/>
+			<param name="vfh/safe_distance" value="0.01" type="double"/>
+			<!-- 停止距离，小于该距离，停止自动飞行 -->
+			<param name="local_planner/safe_distance" value="0.01" type="double"/>
+		</node>	
 	</group>
-
-	
-	<!-- 启动局部规划算法 -->
-	<arg     if="$(arg setup_rtabmap)" name="topic_of_local_pcl" default="/rtabmap/cloud_map"/>
-	<arg unless="$(arg setup_rtabmap)" name="topic_of_local_pcl" default="/octomap_point_cloud_centers"/>
-	<!-- 如果直接使用  GroundTruth 点云输入 -->
-	<!-- <arg name="topic_of_local_pcl" default="/prometheus/pcl_groundtruth"/> -->
-	<!-- 如果直接使用相机点云输入 -->
-	<!-- <arg name="topic_of_local_pcl" default="/realsense_plugin/camera/local_pointclouds"/> -->
-
-	<node pkg="prometheus_local_planning" name="local_planner_main" type="local_planner_main" output="screen" launch-prefix="gnome-terminal --tab --">
-		<remap from="/prometheus/planning/local_pcl" to="$(arg topic_of_local_pcl)" />
-		<!-- 参数 -->
-		<param name="local_planner/sim_mode" value="true" type="bool"/>
-		<param name="local_planner/planner_enable" value="true" type="bool"/>
-		<!-- 二维平面规划 -->
-		<param name="local_planner/is_2D" value="false" type="bool"/>
-		<param name="local_planner/control_yaw_flag" value="true" type="bool"/>
-		<!-- 选择算法 0代表APF,1代表VFH -->
-		<param name="local_planner/algorithm_mode" value="1" type="int"/>
-		<!-- 激光雷达模型,0代表3d雷达类型<sensor_msgs::PointCloud2>,1代表2d雷达类型<sensor_msgs::LaserScan> -->
-		<param name="local_planner/lidar_model" value="0" type="int"/>
-		<!-- 最大速度，设的越小越安全 -->
-		<param name="local_planner/max_planning_vel" value="0.5" type="double"/>
-		<!-- 膨胀参数，一般设置为无人机的半径或更大 -->
-		<param name="local_planner/inflate_distance" value="0.8" type="double"/>
-		<!-- 感知距离，只考虑感知距离内的障碍物 -->
-		<param name="local_planner/sensor_max_range" value="4.0" type="double"/>  
-		<!-- weight -->
-		<param name="vfh/obstacle_weight" value="10.0" type="double"/>
-		<param name="vfh/goalWeight" value="0.1" type="double"/>
-		<param name="vfh/safe_distance" value="0.01" type="double"/>
-		<!-- 停止距离，小于该距离，停止自动飞行 -->
-		<param name="local_planner/safe_distance" value="0.01" type="double"/>
-	</node>	
 
 	<!-- 启动rviz,设为false可关闭 -->
 	<group if="$(arg visualization)">

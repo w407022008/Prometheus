@@ -13,9 +13,20 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <nav_msgs/Odometry.h>
 #include <sensor_msgs/LaserScan.h>
+
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
+#include <pcl/common/io.h>
+#include <pcl/conversions.h>
+#include <pcl/filters/passthrough.h>
+#include <pcl/filters/voxel_grid.h>
+
+#include <pcl_ros/transforms.h>
+#include <pcl_ros/point_cloud.h>
 #include <pcl_conversions/pcl_conversions.h>
+
+#include <tf/transform_listener.h>
+#include <tf/message_filter.h>
 
 #include "prometheus_msgs/PositionReference.h"
 #include "prometheus_msgs/Message.h"
@@ -46,8 +57,8 @@ private:
 
     // 参数
     int algorithm_mode;
-    int lidar_model;
-    bool is_2D;
+    int map_input;
+    bool is_2D, is_rgbd, is_lidar;
     bool control_yaw_flag;
     double max_planning_vel;
     double inflate_distance;
@@ -63,9 +74,11 @@ private:
 
     ros::Subscriber local_point_clound_sub;
     ros::Subscriber swith_sub;
+    
+    tf::TransformListener tfListener;
 
     // 发布控制指令
-    ros::Publisher command_pub,rviz_vel_pub;
+    ros::Publisher command_pub,rviz_vel_pub,point_cloud_pub;
     ros::Timer mainloop_timer,control_timer;
 
     // 局部避障算法 算子
@@ -109,15 +122,20 @@ private:
     };
     EXEC_STATE exec_state;
 
+	// 点云获取
+	bool flag_pcl_ground_removal, flag_pcl_downsampling;
+	double max_ground_height, size_of_voxel_grid;
+	int timeSteps_fusingSamples;
     sensor_msgs::PointCloud2ConstPtr  local_map_ptr_;
     pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_ptr;
-    pcl::PointCloud<pcl::PointXYZ> latest_local_pcl_;
+    pcl::PointCloud<pcl::PointXYZ> latest_local_pcl_, local_pcl_tm1, local_pcl_tm2, local_pcl_tm3, concatenate_PointCloud, local_point_cloud;
 
     void planner_switch_cb(const std_msgs::Bool::ConstPtr& msg);
     void goal_cb(const geometry_msgs::PoseStampedConstPtr& msg);
     void drone_state_cb(const prometheus_msgs::DroneStateConstPtr &msg);
     void localcloudCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
     void Callback_2dlaserscan(const sensor_msgs::LaserScanConstPtr &msg);
+    void Callback_3dpointcloud(const sensor_msgs::PointCloud2ConstPtr &msg);
     void mainloop_cb(const ros::TimerEvent& e);
     void control_cb(const ros::TimerEvent& e);
 

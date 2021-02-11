@@ -20,7 +20,7 @@ void VFH::init(ros::NodeHandle& nh)
 
     nh.param("local_planner/max_planning_vel", limit_v_norm, 0.4);
     // TRUE代表2D平面规划及搜索,FALSE代表3D 
-    nh.param("local_planner/is_2D", is_2D, true); 
+    nh.param("local_planner/is_2D", is_2D, false); 
     inflate_and_safe_distance = safe_distance + inflate_distance;
     
     Hres = 2*M_PI/Hcnt;
@@ -37,7 +37,7 @@ void VFH::set_local_map(sensor_msgs::PointCloud2ConstPtr &local_map_ptr)
     local_map_ptr_ = local_map_ptr;
     ros::Time begin_load_point_cloud = ros::Time::now();
 
-    pcl::fromROSMsg(*local_map_ptr, latest_local_pcl_);
+    pcl::fromROSMsg(*local_map_ptr_, latest_local_pcl_);
 
     has_local_map_=true;
 }
@@ -69,11 +69,10 @@ int VFH::compute_force(Eigen::Vector3d  &goal, Eigen::Vector3d &desired_vel)
     if (isnan(goal(0)) || isnan(goal(1)) || isnan(goal(2)))
         return 0;
 
-    // clear the Cost_hist
-    for(int i =0; i<Hcnt; i++)
-    {
-        Cost_hist[i]=0;
-    }
+    // clear the 2D Cost_hist
+    if(is_2D || true)
+		for(int i =0; i<Hcnt; i++)
+		    Cost_hist[i]=0;
 
     // 状态量
     ros::Time begin_collision = ros::Time::now();
@@ -94,16 +93,16 @@ int VFH::compute_force(Eigen::Vector3d  &goal, Eigen::Vector3d &desired_vel)
     };
 
 
-    // 排斥力
-    Eigen::Vector3d p3d;
-    vector<Eigen::Vector3d> obstacles;
 
-    //Eigen::Quaterniond cur_rotation_local_to_global(cur_odom_.pose.pose.orientation.w, cur_odom_.pose.pose.orientation.x, cur_odom_.pose.pose.orientation.y, cur_odom_.pose.pose.orientation.z); 
-    //Eigen::Matrix<double,3,3> rotation_mat_local_to_global = cur_rotation_local_to_global.toRotationMatrix();
-    //Eigen::Vector3d eulerAngle_yrp = rotation_mat_local_to_global.eulerAngles(2, 1, 0);// R_z*R_y*R_x
-    //rotation_mat_local_to_global = Eigen::AngleAxisd(eulerAngle_yrp(0), Eigen::Vector3d::UnitZ()).toRotationMatrix();
+
+//    Eigen::Quaterniond cur_rotation_local_to_global(cur_odom_.pose.pose.orientation.w, cur_odom_.pose.pose.orientation.x, cur_odom_.pose.pose.orientation.y, cur_odom_.pose.pose.orientation.z); 
+//    Eigen::Matrix<double,3,3> rotation_mat_local_to_global = cur_rotation_local_to_global.toRotationMatrix();
+//    Eigen::Vector3d eulerAngle_yrp = rotation_mat_local_to_global.eulerAngles(2, 1, 0);// R_z*R_y*R_x
+//    rotation_mat_local_to_global = Eigen::AngleAxisd(eulerAngle_yrp(0), Eigen::Vector3d::UnitZ()).toRotationMatrix();
 
     // 遍历点云中的所有点
+    Eigen::Vector3d p3d;
+    vector<Eigen::Vector3d> obstacles;
     for (size_t i = 0; i < latest_local_pcl_.points.size(); ++i) 
     {
         // 提取障碍物点
@@ -118,28 +117,30 @@ int VFH::compute_force(Eigen::Vector3d  &goal, Eigen::Vector3d &desired_vel)
         if(fabs(p3d(2))<ground_height)
             continue;
 
-        //　超出最大感知距离，则不考虑该点的排斥力
+        //　超出最大考虑距离，则忽略该点
         double dist_push = (uav2obs).norm();
         if(dist_push > sensor_max_range || isnan(dist_push))
             continue;
 
 
         double obs_dist = uav2obs.norm();
-        if (fabs(uav2obs(2))>0.5) continue;
-        uav2obs(2) = 0.0;
-        double obs_angle = sign(uav2obs(1)) * acos(uav2obs(0) / uav2obs.norm());
-        double angle_range;
-        if(obs_dist>inflate_and_safe_distance)
-        {
-            angle_range = asin(inflate_and_safe_distance/obs_dist);
-        }else if (obs_dist<=inflate_and_safe_distance)
-        {
-            angle_range = M_PI/2;
-            safe_cnt++;  // 非常危险
-        }
-
-        double obstacle_cost = obstacle_weight / (1/inflate_distance - 1/(inflate_distance>obs_dist ? inflate_distance+1e-3 : obs_dist) );
-        generate_voxel_data(obs_angle, angle_range, obstacle_cost);
+        if (is_2D || true){
+		    if (fabs(uav2obs(2))>0.5) continue;
+		    uav2obs(2) = 0.0;
+		    double obs_angle = sign(uav2obs(1)) * acos(uav2obs(0) / uav2obs.norm());
+		    double angle_range;
+		    if(obs_dist>inflate_and_safe_distance)
+		    {
+		        angle_range = asin(inflate_and_safe_distance/obs_dist);
+		    }else if (obs_dist<=inflate_and_safe_distance)
+		    {
+		        angle_range = M_PI/2;
+		        safe_cnt++;  // 非常危险
+		    }
+        
+		    double obstacle_cost = obstacle_weight / (1/inflate_distance - 1/(inflate_distance>obs_dist ? inflate_distance+1e-3 : obs_dist) );
+		    generate_voxel_data(obs_angle, angle_range, obstacle_cost);
+		}
 
         obstacles.push_back(p3d);
     }
@@ -174,31 +175,33 @@ int VFH::compute_force(Eigen::Vector3d  &goal, Eigen::Vector3d &desired_vel)
     }
 
     // 与当前速度相关cost计算
-    // 不考虑高度影响
-    current_vel(2) = 0.0;
-    double current_norm = current_vel.norm();
-    double current_heading = sign(current_vel(1)) *acos(current_vel(0)/current_norm);
-    
-    for(int i=0; i<Hcnt; i++)
-    {
-        // angle_i 为当前角度
-        double angle_i = find_angle(i);
+    double hor_current_vel_norm = Eigen::Vector3d(current_vel(0),current_vel(1),0.0).norm();
+    if (hor_current_vel_norm>1e-6){
+		double current_heading = sign(current_vel(1)) *acos(current_vel(0)/hor_current_vel_norm);
+		
+		for(int i=0; i<Hcnt; i++)
+		{
+		    // angle_i 为当前角度
+		    double angle_i = find_angle(i);
 
-        double angle_er = angle_error(angle_i, current_heading); // angle_i in 0 ~ 2pi; heading in -pi ~ pi
-        // 当前角度与目标角度差的越多,则该代价越大
-        Cost_hist[i] += goalWeight * angle_er * 0.5;
-    }
+		    double angle_er = angle_error(angle_i, current_heading); // angle_i in 0 ~ 2pi; heading in -pi ~ pi
+		    // 当前角度与目标角度差的越多,则该代价越大
+		    Cost_hist[i] += goalWeight * angle_er * 0.5;
+		}
+	}
 
 
-    // 寻找cost最小的路径
+
+    // 寻找cost最小的方向
     int best_ind = find_optimization_path();   // direction 
     // 提取最优路径的航向角
     double best_heading  = find_angle(best_ind);
-
+    // 指导速度
     desired_vel(0) = cos(best_heading)*limit_v_norm;
     desired_vel(1) = sin(best_heading)*limit_v_norm;
-    // 定高飞行
     desired_vel(2) = 0.0;
+
+
 
     // 如果不安全的点超出指定数量
     if(safe_cnt>5)

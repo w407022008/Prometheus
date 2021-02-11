@@ -160,7 +160,7 @@ int APF::compute_force(Eigen::Vector3d &goal, Eigen::Vector3d &desired_vel)
 			count ++;
 		}
 		if (obs_angle < M_PI/6)
-			guid_force += current_vel.cross((-uav2obs).cross(current_vel)) / pow(current_vel_norm,2) / pow(dist_push,2);
+			guid_force += current_vel.cross((-uav2obs).cross(current_vel)) / pow(current_vel_norm,2) / dist_push * 1/max(dist_push*sin(obs_angle), 0.05); // or / pow(dist_push,2)
 			if (max_guid_force<min(3,1/(max(inflate_distance,dist_push) - inflate_distance + 1e-6))) max_guid_force = 0.6*max_guid_force + 0.4*min(3,1/(max(inflate_distance,dist_push) - inflate_distance + 1e-6));
     }
 

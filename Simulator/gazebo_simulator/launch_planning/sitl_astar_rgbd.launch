@@ -5,8 +5,9 @@
 	<arg name="z" default="0"/>
 	<arg name="gazebo_gui" default="false"/>
 	<arg name="visualization" default="true"/>
-	<arg name="setup_rtabmap" default="false" />
-	<arg name="depth_mode" default="true"/>
+	<arg name="setup_rtabmap" default="false" />  <!-- rtabmap 启动特别慢 -->
+	<arg name="mapper_enable" default="false" />  <!-- true: 使用建图数据; false: 使用传感器原始数据 -->
+	<arg name="depth_mode" default="true"/><!-- rtabmap 双目、深度信息需要开启 realsense_plugin; 深度信息也可以开启 openni_kinect; octomap 点云信息可以开通 openni_kinect 或 depth_camera -->
 	<arg name="type_in_goal" default="false"/>
 
 	<arg name="world" default="$(find prometheus_gazebo)/worlds/obstacle.world"/>
@@ -55,8 +56,51 @@
 			<arg name="rtabmapviz"              value="false"/>
 			<arg name="rviz"                    value="false"/>
 		</include>
+		
+		<!-- 启动全局规划算法 -->
+		<node pkg="prometheus_global_planning" name="global_planner_main" type="global_planner_main" output="screen" launch-prefix="gnome-terminal --tab --">
+			<!-- 如果直接使用  GroundTruth 点云输入 -->
+			<!-- <remap from="/prometheus/global_planning/global_pcl" to="/prometheus/pcl_groundtruth" />-->
+			<remap if="$(arg mapper_enable)" from="/prometheus/global_planning/global_pcl" to="/rtabmap/cloud_map" />
+			<remap unless="$(arg mapper_enable)" from="/prometheus/global_planning/local_pcl" to="/realsense_plugin/camera/local_pointclouds" />
+			
+			<!-- 0: A_star; 1: hybrid A_star -->
+			<param name="global_planner/algorithm_mode" value="0" type="int"/>
+			<param name="global_planner/sim_mode" value="true" type="bool"/>
+			<param name="global_planner/planner_enable" value="true" type="bool"/>
+			<!-- 二维平面规划 -->
+			<param name="global_planner/is_rgbd" value="true" type="bool"/>
+			<param name="global_planner/is_2D" value="false" type="bool"/>
+			<param name="global_planner/control_yaw_flag" value="true" type="bool"/>
+			<!-- 停止距离 -->
+			<param name="global_planner/safe_distance" value="0.01" type="double"/> <!-- 若膨胀距离map/inflate设置已考虑安全距离，建议此处设为0 -->
+			<param name="global_planner/time_per_path" value="0.5" type="double"/> <!-- 路径追踪执行频率 -->
+			<param name="global_planner/replan_time" value="2.0" type="double"/> <!-- 重规划频率 -->
+			<!-- 0:groundtruth点云、SLAM全局点云生成; 1:RGBD相机、三维激光雷达传感器数据输入; 2:2维激光雷达传感器数据输入 -->
+			<param if="$(arg mapper_enable)" name="global_planner/map_input" value="0" type="int"/>
+			<param unless="$(arg mapper_enable)" name="global_planner/map_input" value="1" type="int"/>
+			<param name="global_planner/ground_removal" value="true" type="bool"/>
+			<param name="global_planner/max_ground_height" value="0.2" type="double"/>
+			<param name="global_planner/downsampling" value="true" type="bool"/>
+			<!-- 最大搜索步数 -->
+			<param name="astar/allocate_num" value="10000" type="int"/>
+			<!-- 启发式函数系数 -->
+			<param name="astar/lambda_heu" value="2.0" type="double"/>
+			<!-- 分辨率 -->
+			<param name="map/resolution" value="0.1" type="double"/>
+			<!-- 障碍物膨胀距离 -->
+			<param name="map/inflate" value="0.8" type="double"/>
+			<!-- 地图范围 -->
+			<param name="map/origin_x" value="-15.0" type="double"/>
+			<param name="map/origin_y" value="-15.0" type="double"/>
+			<param name="map/origin_z" value="0.2" type="double"/>
+			<param name="map/map_size_x" value="30.0" type="double"/>
+			<param name="map/map_size_y" value="30.0" type="double"/>
+			<param name="map/map_size_z" value="3.0" type="double"/>
+		</node>
 	</group>
-    	<!-- 启动 octomap 建图 -->
+	
+	<!-- 启动 octomap 建图 -->
 	<group unless="$(arg setup_rtabmap)">
 		<!-- RGBD相机局部点云 -->
 		<!-- 如果没有，可以通过下面这个launch文件，根据RGBD生成局部点云(比较吃CPU) -->
@@ -70,49 +114,52 @@
 			<!-- data source to integrate (PointCloud2) -->
 			<remap from="cloud_in" to="/realsense_plugin/camera/local_pointclouds" />
 		</node>
+		
+		<!-- 启动全局规划算法 -->
+		<node pkg="prometheus_global_planning" name="global_planner_main" type="global_planner_main" output="screen" launch-prefix="gnome-terminal --tab --">
+			<!-- 如果直接使用  GroundTruth 点云输入 -->
+			<!-- <remap from="/prometheus/global_planning/global_pcl" to="/prometheus/pcl_groundtruth" />-->
+			<remap if="$(arg mapper_enable)" from="/prometheus/global_planning/global_pcl" to="/octomap_point_cloud_centers" />
+			<remap unless="$(arg mapper_enable)" from="/prometheus/global_planning/local_pcl" to="/realsense_plugin/camera/local_pointclouds" />
+
+			<!-- 0: A_star; 1: hybrid A_star -->
+			<param name="global_planner/algorithm_mode" value="0" type="int"/>
+			<param name="global_planner/sim_mode" value="true" type="bool"/>
+			<param name="global_planner/planner_enable" value="true" type="bool"/>
+			<!-- 二维平面规划 -->
+			<param name="global_planner/is_rgbd" value="true" type="bool"/>
+			<param name="global_planner/is_2D" value="false" type="bool"/>
+			<param name="global_planner/control_yaw_flag" value="true" type="bool"/>
+			<!-- 停止距离 -->
+			<param name="global_planner/safe_distance" value="0.01" type="double"/> <!-- 若膨胀距离map/inflate设置已考虑安全距离，建议此处设为0 -->
+			<param name="global_planner/time_per_path" value="0.5" type="double"/> <!-- 路径追踪执行频率 -->
+			<param name="global_planner/replan_time" value="2.0" type="double"/> <!-- 重规划频率 -->
+			<!-- 0:groundtruth点云、SLAM全局点云生成; 1:RGBD相机、三维激光雷达传感器数据输入; 2:2维激光雷达传感器数据输入 -->
+			<param if="$(arg mapper_enable)" name="global_planner/map_input" value="0" type="int"/>
+			<param unless="$(arg mapper_enable)" name="global_planner/map_input" value="1" type="int"/>
+			<param name="global_planner/ground_removal" value="true" type="bool"/>
+			<param name="global_planner/max_ground_height" value="0.2" type="double"/>
+			<param name="global_planner/downsampling" value="true" type="bool"/>
+			<!-- 最大搜索步数 -->
+			<param name="astar/allocate_num" value="10000" type="int"/>
+			<!-- 启发式函数系数 -->
+			<param name="astar/lambda_heu" value="2.0" type="double"/>
+			<!-- 分辨率 -->
+			<param name="map/resolution" value="0.1" type="double"/>
+			<!-- 障碍物膨胀距离 -->
+			<param name="map/inflate" value="0.8" type="double"/>
+			<!-- 地图范围 -->
+			<param name="map/origin_x" value="-15.0" type="double"/>
+			<param name="map/origin_y" value="-15.0" type="double"/>
+			<param name="map/origin_z" value="0.2" type="double"/>
+			<param name="map/map_size_x" value="30.0" type="double"/>
+			<param name="map/map_size_y" value="30.0" type="double"/>
+			<param name="map/map_size_z" value="3.0" type="double"/>
+		</node>
 	</group>
 
-	<!-- 确定路径规划点云输入 -->
-	<arg     if="$(arg setup_rtabmap)" name="topic_of_global_pcl" default="/rtabmap/cloud_map"/>
-	<arg unless="$(arg setup_rtabmap)" name="topic_of_global_pcl" default="/octomap_point_cloud_centers"/>
-	<!-- 如果直接使用  GroundTruth 点云输入 -->
-	<!-- <arg name="topic_of_global_pcl" default="/prometheus/pcl_groundtruth"/> -->
-	<!-- 如果直接使用相机点云输入 -->
-	<!-- <arg name="topic_of_global_pcl" default="/realsense_plugin/camera/local_pointclouds"/> -->
 
 
-	<!-- 启动全局规划算法 -->
-	<node pkg="prometheus_global_planning" name="global_planner_main" type="global_planner_main" output="screen" launch-prefix="gnome-terminal --tab --">
-		<remap from="/prometheus/global_planning/global_pcl" to="$(arg topic_of_global_pcl)" />
-		<!-- 参数 -->
-		<param name="global_planner/sim_mode" value="true" type="bool"/>
-		<param name="global_planner/planner_enable" value="true" type="bool"/>
-		<!-- 二维平面规划 -->
-		<param name="global_planner/is_2D" value="true" type="bool"/>
-		<param name="global_planner/control_yaw_flag" value="$(arg is_2DLidar)" type="bool"/> <!-- 如果使用 相机 最好自旋以感知地图 -->
-		<!-- ２维高度，建议与起飞高度一致 -->
-		<param name="global_planner/fly_height_2D" value="1.0" type="double"/>
-		<!-- 停止距离 -->
-		<param name="global_planner/safe_distance" value="0.01" type="double"/> <!-- 若膨胀距离map/inflate设置已考虑安全距离，建议此处设为0 -->
-		<param name="global_planner/time_per_path" value="1.0" type="double"/> <!-- 路径追踪执行频率 -->
-		<param name="global_planner/replan_time" value="2.0" type="double"/> <!-- 重规划频率 -->
-		<param name="global_planner/map_input" value="0" type="int"/> <!-- 0代表全局点云(其他的好像不行)，１代表局部点云，２代表激光雷达scan数据 -->
-		<!-- 最大搜索步数 -->
-		<param name="astar/allocate_num" value="10000" type="int"/>
-		<!-- 启发式函数系数 -->
-		<param name="astar/lambda_heu" value="2.0" type="double"/>
-		<!-- 分辨率 -->
-		<param name="map/resolution" value="0.1" type="double"/>
-		<!-- 障碍物膨胀距离 -->
-		<param name="map/inflate" value="0.8" type="double"/>
-		<!-- 地图范围 -->
-		<param name="map/origin_x" value="-15.0" type="double"/>
-		<param name="map/origin_y" value="-15.0" type="double"/>
-		<param name="map/origin_z" value="-0.5" type="double"/>
-		<param name="map/map_size_x" value="30.0" type="double"/>
-		<param name="map/map_size_y" value="30.0" type="double"/>
-		<param name="map/map_size_z" value="3.0" type="double"/>
-	</node>
 
 	<!-- run the pub_goal.cpp -->
 	<node if="$(arg type_in_goal)" pkg="prometheus_mission" type="pub_goal" name="pub_goal" output="screen" launch-prefix="gnome-terminal --tab --">	
