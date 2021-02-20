@@ -65,7 +65,7 @@ void Global_Planner::init(ros::NodeHandle& nh)
     // safety_timer = nh.createTimer(ros::Duration(2.0), &Global_Planner::safety_cb, this); 
 
     // 定时器 规划器算法执行周期
-    mainloop_timer = nh.createTimer(ros::Duration(1.0), &Global_Planner::mainloop_cb, this);  
+    mainloop_timer = nh.createTimer(ros::Duration(0.2), &Global_Planner::mainloop_cb, this);  
       
     // 路径追踪循环，快速移动场景应当适当提高执行频率
     // time_per_path
@@ -290,7 +290,7 @@ void Global_Planner::Lpointcloud_cb(const sensor_msgs::PointCloud2ConstPtr &msg)
     sensor_ready = true;
 
     // 对Astar中的地图进行更新（局部地图+odom）
-    global_alg_ptr->Occupy_map_ptr->map_update_lpcl(msg, Drone_odom);
+    global_alg_ptr->Occupy_map_ptr->map_update_lpcl(msg);
     // 并对地图进行膨胀
     global_alg_ptr->Occupy_map_ptr->inflate_point_cloud(); 
 }
@@ -308,15 +308,36 @@ void Global_Planner::laser_cb(const sensor_msgs::LaserScanConstPtr &msg)
     sensor_ready = true;
 
     // 对Astar中的地图进行更新（laser+odom）
-    global_alg_ptr->Occupy_map_ptr->map_update_laser(msg, Drone_odom);
+    global_alg_ptr->Occupy_map_ptr->map_update_laser(msg);
     // 并对地图进行膨胀
     global_alg_ptr->Occupy_map_ptr->inflate_point_cloud(); 
 }
 
 void Global_Planner::track_path_cb(const ros::TimerEvent& e)
 {
-    if(!path_ok || !planner_enable_default)
-    {
+	if (!planner_enable_default)
+		return;
+		
+	static ros::Time last_cmd_pub_time = ros::Time::now();
+    if(!path_ok)
+	{	if (control_yaw_flag && exec_state == EXEC_STATE::WAIT_GOAL ){
+			Command_Now.header.stamp                        = ros::Time::now();
+			Command_Now.Mode                                = prometheus_msgs::ControlCommand::Move;
+			Command_Now.Command_ID                          = Command_Now.Command_ID + 1;
+			Command_Now.source                              = NODE_NAME;
+			Command_Now.Reference_State.Move_mode           = prometheus_msgs::PositionReference::XY_VEL_Z_POS;
+			Command_Now.Reference_State.Move_frame          = prometheus_msgs::PositionReference::ENU_FRAME;
+		    Command_Now.Reference_State.position_ref[2]     = _DroneState.position[2];
+			Command_Now.Reference_State.velocity_ref[0]     = 0.0;
+			Command_Now.Reference_State.velocity_ref[1]     = 0.0;
+			
+			desired_yaw = desired_yaw + 0.5*(ros::Time::now()-last_cmd_pub_time).toSec();
+			if(desired_yaw>M_PI)
+				desired_yaw -= 2*M_PI;
+			Command_Now.Reference_State.yaw_ref             = desired_yaw;
+		    command_pub.publish(Command_Now);
+		    last_cmd_pub_time = ros::Time::now();
+		}
         return;
     }
 
@@ -396,59 +417,49 @@ void Global_Planner::track_path_cb(const ros::TimerEvent& e)
 
     if (control_yaw_flag)
     {
-        // 更新期望偏航角
-        if( sqrt( _DroneState.velocity[1]* _DroneState.velocity[1]
-                 +  _DroneState.velocity[0]* _DroneState.velocity[0])  >  0.05  )
+        auto sign=[](double v)->double
         {
-            auto sign=[](double v)->double
-            {
-                return v<0.0? -1.0:1.0;
-            };
-            Eigen::Vector3d ref_vel;
-            ref_vel[0] = _DroneState.velocity[0];
-            ref_vel[1] = _DroneState.velocity[1];
-            ref_vel[2] = _DroneState.velocity[2];
+            return v<0.0? -1.0:1.0;
+        };
+        
+//        Eigen::Vector3d ref_vel;
+//        ref_vel[0] = _DroneState.velocity[0];
+//        ref_vel[1] = _DroneState.velocity[1];
+//        ref_vel[2] = 0.0;
+        
+        Eigen::Vector3d ref_pos;
+        ref_pos[0] = path_cmd.poses[i].pose.position.x;
+        ref_pos[1] = path_cmd.poses[i].pose.position.y;
+        ref_pos[2] = 0.0;
 
-//            Eigen::Vector3d ref_pos;
-//            ref_pos[0] = path_cmd.poses[i].pose.position.x;
-//            ref_pos[1] = path_cmd.poses[i].pose.position.y;
-//            ref_pos[2] = path_cmd.poses[i].pose.position.z;
+        Eigen::Vector3d curr_pos;
+        curr_pos[0] = _DroneState.position[0];
+        curr_pos[1] = _DroneState.position[1];
+        curr_pos[2] = 0.0;
 
-//            Eigen::Vector3d curr_pos;
-//            curr_pos[0] = _DroneState.position[0];
-//            curr_pos[1] = _DroneState.position[1];
-//            curr_pos[2] = _DroneState.position[2];
+        Eigen::Vector3d diff_pos = ref_pos - curr_pos;
+        // 更新期望偏航角
+    	if (diff_pos.norm()>1e-3) {
+//	        float next_desired_yaw_vel      = sign(ref_vel(1)) * acos(ref_vel(0) / ref_vel.norm());
+	        float next_desired_yaw_pos      = sign(diff_pos(1)) * acos(diff_pos(0) / diff_pos.norm());
 
-//            float next_desired_yaw_vel      = sign(ref_vel(1)) * acos(ref_vel(0) / ref_vel.norm());
-
-//            Eigen::Vector3d diff_pos = ref_pos - curr_pos;
-//            float next_desired_yaw_pos      = sign(diff_pos(1)) * acos(diff_pos(0) / diff_pos.norm());
-
-
-		    if( sqrt( ref_vel[1]* ref_vel[1] + ref_vel[0]* ref_vel[0])  >  0.05  )
-		    {
-		    	float next_desired_yaw_vel = sign(ref_vel(1)) * acos(ref_vel(0) / ref_vel.norm());
-		        if (fabs(desired_yaw-next_desired_yaw_vel)<M_PI)
-		        	desired_yaw = (0.3*desired_yaw + 0.7*next_desired_yaw_vel);
-		        else
-		        	desired_yaw = next_desired_yaw_vel + sign(next_desired_yaw_vel) * 0.3/(0.3+0.7)*(2*M_PI-fabs(desired_yaw-next_desired_yaw_vel));
-		    } else {
-		        desired_yaw = desired_yaw + 0.05;
-		    }
+		    if (fabs(desired_yaw-next_desired_yaw_pos)<M_PI)
+		    	desired_yaw = (0.4*desired_yaw + 0.6*next_desired_yaw_pos);
+		    else
+		    	desired_yaw = next_desired_yaw_pos + sign(next_desired_yaw_pos) * 0.4/(0.4+0.6)*(2*M_PI-fabs(desired_yaw-next_desired_yaw_pos));
+		
 			if(desired_yaw>M_PI)
 				desired_yaw -= 2*M_PI;
 			else if (desired_yaw<-M_PI)
 				desired_yaw += 2*M_PI;
-        }
+		}
     }else
-    {
         desired_yaw = 0.0;
-    }
 
     Command_Now.Reference_State.yaw_ref             = desired_yaw;
-    
     command_pub.publish(Command_Now);
-
+	last_cmd_pub_time = ros::Time::now();
+	
     cur_id = cur_id + 1;
 }
  
@@ -546,15 +557,14 @@ void Global_Planner::mainloop_cb(const ros::TimerEvent& e)
                 tra_start_time = ros::Time::now();
                 exec_state = EXEC_STATE::TRACKING;
                 path_cmd_pub.publish(path_cmd);
-                pub_message(message_pub, prometheus_msgs::Message::NORMAL, NODE_NAME, "Get a new path!");       
+                pub_message(message_pub, prometheus_msgs::Message::NORMAL, NODE_NAME, "Get a new path!");  
             }
 
             break;
         }
         case TRACKING:
         {
-            // 本循环是1Hz,此处不是很精准
-            if(exec_num >= replan_time)
+            if((ros::Time::now() - tra_start_time).toSec() >= replan_time)
             {
                 exec_state = EXEC_STATE::PLANNING;
                 exec_num = 0;

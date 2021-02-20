@@ -8,8 +8,11 @@
 	<arg name="visualization" default="true"/>
 	<arg name="pcd_file" value="$(find prometheus_gazebo)/maps/obstacle.pcd" />
 	<arg name="model" default="amov_solo"/>
-	<arg name="is_2DLidar" default="true"/>
+	<arg name="is_2DLidar" default="false"/>
 	<arg name="octomap_denied" default="true"/>
+	<arg name="octomap_ground_filter_out" default="false"/>
+	<arg     if="$(arg octomap_ground_filter_out)" name="octomap_ground_removal"  default="false"/>
+	<arg unless="$(arg octomap_ground_filter_out)" name="octomap_ground_removal"  default="true"/>
 	<arg name="type_in_goal" default="false"/>
 
 	<group if="$(arg is_2DLidar)">
@@ -28,6 +31,7 @@
 		</node>
 		<!-- 启动octomap建图 -->
 		<node unless="$(arg octomap_denied)" pkg="octomap_server" type="octomap_server_node" name="octomap_server">
+			<!-- 地图分辨率 -->
 			<param name="resolution" value="0.1" />
 			<!-- 发布地图的坐标系 -->
 			<param name="frame_id" type="string" value="world" />
@@ -35,6 +39,26 @@
 			<param name="sensor_model/max_range" value="5.0" />
 			<!-- 局部点云输入 -->
 			<remap from="cloud_in" to="/prometheus/sensors/pcl2" />
+			
+			<!-- base_frame_id -->
+			<param if="$(arg octomap_ground_filter_out)" name="base_frame_id" type="string" value="world" />
+			<!-- 地面是否滤除 -->
+			<param if="$(arg octomap_ground_filter_out)" name="filter_ground " type="bool" value="$(arg octomap_ground_filter_out)" />
+			<!-- 地面点域, Distance threshold for points (in z direction) to be segmented to the ground plane, by default 0.04 -->
+			<param if="$(arg octomap_ground_filter_out)" name="ground_filter/distance" value="0.2" />
+			<!-- 滤除平面识别, Angular threshold of the detected plane from the horizontal plane to be detected as ground, by default 0.15 -->
+			<param if="$(arg octomap_ground_filter_out)" name="ground_filter/angle" value="0.2" />
+			<!-- 滤除平面高度, Distance threshold from z=0 for a plane to be detected as ground, by default 0.07 -->
+			<param if="$(arg octomap_ground_filter_out)" name="ground_filter/plane_distance" value="0.5" />
+			
+			<!-- 直通滤除地面 -->
+<!--			<param if="$(arg octomap_ground_removal)" name="pointcloud_min_x " value="" />-->
+<!--			<param if="$(arg octomap_ground_removal)" name="pointcloud_max_x " value="" />-->
+<!--			<param if="$(arg octomap_ground_removal)" name="pointcloud_min_y " value="" />-->
+<!--			<param if="$(arg octomap_ground_removal)" name="pointcloud_max_y " value="" />-->
+			<param if="$(arg octomap_ground_removal)" name="pointcloud_min_z " value="0.15" />
+<!--			<param if="$(arg octomap_ground_removal)" name="pointcloud_max_z " value="" />-->
+			
 		</node>
 		
 		<!-- 启动局部规划算法 -->
@@ -55,20 +79,20 @@
 			<param name="local_planner/downsampling" value="true" type="bool"/>
 			<param name="local_planner/resolution" value="0.1" type="double"/>
 			<!-- 飞行高度 -->
-			<param name="local_planner/is_2D" value="false" type="bool"/>
+			<param name="local_planner/is_2D" value="$(arg octomap_denied)" type="bool"/>
 			<param name="local_planner/fly_height_2D" value="1.0" type="double"/> <!-- 如果是二维的话有效 -->
 			<!-- 最大速度，设的越小越安全 -->
 			<param name="local_planner/max_planning_vel" value="0.5" type="double"/>
 			<!-- 膨胀参数，一般设置为无人机的半径或更大 -->
 			<param name="local_planner/inflate_distance" value="0.8" type="double"/>
 			<!-- 感知距离，只考虑感知距离内的障碍物 -->
-			<param name="local_planner/sensor_max_range" value="4.0" type="double"/>    
+			<param name="local_planner/sensor_max_range" value="3.0" type="double"/>    
 			<!-- weight -->
-			<param name="vfh/obstacle_weight" value="10.0" type="double"/>
-			<param name="vfh/goalWeight" value="0.1" type="double"/>
+<!--			<param name="vfh/obstacle_weight" value="10.0" type="double"/>-->
+<!--			<param name="vfh/goalWeight" value="0.1" type="double"/>-->
 			<param name="vfh/safe_distance" value="0.01" type="double"/>
 			<!-- 直方图个数 -->
-			<param name="vfh/h_res" value="360" type="int"/>
+			<param name="vfh/h_cnt" value="360" type="int"/>
 		</node>	
 	</group>
 	
@@ -85,6 +109,7 @@
 		
 		<!-- 启动 octomap 建图 -->
 		<node unless="$(arg octomap_denied)" pkg="octomap_server" type="octomap_server_node" name="octomap_server">
+			<!-- 地图分辨率 -->
 			<param name="resolution" value="0.1" />
 			<!-- fixed map(world) frame (set to 'map' if SLAM or localization running!) -->
 			<param name="frame_id" type="string" value="map" />
@@ -92,6 +117,27 @@
 			<param name="sensor_model/max_range" value="5.0" />
 			<!-- data source to integrate (PointCloud2) -->
 			<remap from="cloud_in" to="/prometheus/sensors/3Dlidar_scan" />
+			
+			<!-- 地面分割滤除 -->
+			<!-- base_frame_id -->
+			<param if="$(arg octomap_ground_filter_out)" name="base_frame_id" type="string" value="world" />
+			<!-- 地面是否滤除 -->
+			<param if="$(arg octomap_ground_filter_out)" name="filter_ground " type="bool" value="$(arg octomap_ground_filter_out)" />
+			<!-- 地面点域, Distance threshold for points (in z direction) to be segmented to the ground plane, by default 0.04 -->
+			<param if="$(arg octomap_ground_filter_out)" name="ground_filter/distance" value="0.2" />
+			<!-- 滤除平面识别, Angular threshold of the detected plane from the horizontal plane to be detected as ground, by default 0.15 -->
+			<param if="$(arg octomap_ground_filter_out)" name="ground_filter/angle" value="0.2" />
+			<!-- 滤除平面高度, Distance threshold from z=0 for a plane to be detected as ground, by default 0.07 -->
+			<param if="$(arg octomap_ground_filter_out)" name="ground_filter/plane_distance" value="0.5" />
+			
+			<!-- 直通滤除地面 -->
+<!--			<param if="$(arg octomap_ground_removal)" name="pointcloud_min_x " value="" />-->
+<!--			<param if="$(arg octomap_ground_removal)" name="pointcloud_max_x " value="" />-->
+<!--			<param if="$(arg octomap_ground_removal)" name="pointcloud_min_y " value="" />-->
+<!--			<param if="$(arg octomap_ground_removal)" name="pointcloud_max_y " value="" />-->
+			<param if="$(arg octomap_ground_removal)" name="pointcloud_min_z " value="0.15" />
+<!--			<param if="$(arg octomap_ground_removal)" name="pointcloud_max_z " value="" />-->
+			
 		</node>
 		
 		<!-- 启动局部规划算法 -->
@@ -113,20 +159,20 @@
 			<param name="local_planner/resolution" value="0.1" type="double"/>
 			<!-- 飞行高度 -->
 			<param name="local_planner/is_lidar" value="$(arg octomap_denied)" type="bool"/>
-			<param name="global_planner/is_2D" value="true" type="bool"/> <!-- 最好是，免得往z轴上跑 -->
+			<param name="global_planner/is_2D" value="true" type="bool"/>
 			<param name="global_planner/control_yaw_flag" value="true" type="bool"/> <!-- 如果使用 2dLidar 就需要自旋以感知地图 -->
 			<!-- 最大速度，设的越小越安全 -->
 			<param name="local_planner/max_planning_vel" value="1.0" type="double"/>
 			<!-- 膨胀参数，一般设置为无人机的半径或更大 -->
 			<param name="local_planner/inflate_distance" value="0.8" type="double"/>
 			<!-- 感知距离，只考虑感知距离内的障碍物 -->
-			<param name="local_planner/sensor_max_range" value="5.0" type="double"/>    
+			<param name="local_planner/sensor_max_range" value="3.0" type="double"/>    
 			<!-- weight -->
-			<param name="vfh/obstacle_weight" value="10.0" type="double"/>
-			<param name="vfh/goalWeight" value="0.1" type="double"/>
+<!--			<param name="vfh/obstacle_weight" value="10.0" type="double"/>-->
+<!--			<param name="vfh/goalWeight" value="0.1" type="double"/>-->
 			<param name="vfh/safe_distance" value="0.01" type="double"/>
 			<!-- 直方图个数 -->
-			<param name="vfh/h_res" value="360" type="int"/>
+			<param name="vfh/h_cnt" value="360" type="int"/>
 		</node>	
 	</group>
 

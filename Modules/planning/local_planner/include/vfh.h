@@ -34,30 +34,30 @@ private:
     double inflate_distance;
     double sensor_max_range;
     double safe_distance;
+    double inflate_and_safe_distance;
     double ground_height;
+    double limit_v_norm;
+    double  Hres;
+    int Hcnt;  // 直方图横向个数
+    double  Vres;
+    int Vcnt;  // 直方图纵向个数
 
+/*    double goalWeight, obstacle_weight;*/
+
+	// bool 参数
     bool has_local_map_;
     bool has_odom_;
     bool is_2D;
-    
-    double goalWeight, obstacle_weight;
 
-    double inflate_and_safe_distance;
 
-    double limit_v_norm;
-
-    double* Cost_hist;
-    double  Hres;
-    int Hcnt;  // 直方图个数
+	// Histogram
+    double* Histogram;
 
     pcl::PointCloud<pcl::PointXYZ> latest_local_pcl_;
     sensor_msgs::PointCloud2ConstPtr  local_map_ptr_;
     nav_msgs::Odometry cur_odom_;
 
-    int find_Hcnt(double angle);
-    double find_angle(int cnt);
-    double angle_error(double angle1, double angle2);
-    void generate_voxel_data(double angle_cen, double angle_range, double val);
+    void PolarCoordinateVFH(double angle_cen, double angle_range, double val);
     int find_optimization_path(void);
 
 public:
@@ -70,7 +70,7 @@ public:
 
     VFH(){}
     ~VFH(){
-        delete Cost_hist;
+        delete Histogram;
     }
 
     typedef shared_ptr<VFH> Ptr;

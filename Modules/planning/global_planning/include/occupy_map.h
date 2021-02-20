@@ -82,9 +82,9 @@ class Occupy_map
         // 地图更新函数 - 输入：全局点云
         void map_update_gpcl(const sensor_msgs::PointCloud2ConstPtr & global_point);
         // 地图更新函数 - 输入：局部点云
-        void map_update_lpcl(const sensor_msgs::PointCloud2ConstPtr & local_point, const nav_msgs::Odometry & odom);
+        void map_update_lpcl(const sensor_msgs::PointCloud2ConstPtr & local_point);
         // 地图更新函数 - 输入：二维激光雷达
-        void map_update_laser(const sensor_msgs::LaserScanConstPtr & local_point, const nav_msgs::Odometry & odom);
+        void map_update_laser(const sensor_msgs::LaserScanConstPtr & local_point);
         // 地图膨胀
         void inflate_point_cloud(void);
         // 判断当前点是否在地图内

@@ -78,8 +78,8 @@
 			<!-- 感知距离，只考虑感知距离内的障碍物 -->
 			<param name="local_planner/sensor_max_range" value="4.0" type="double"/>  
 			<!-- weight -->
-			<param name="vfh/obstacle_weight" value="10.0" type="double"/>
-			<param name="vfh/goalWeight" value="0.1" type="double"/>
+<!--			<param name="vfh/obstacle_weight" value="10.0" type="double"/>-->
+<!--			<param name="vfh/goalWeight" value="0.1" type="double"/>-->
 			<param name="vfh/safe_distance" value="0.01" type="double"/>
 			<!-- 停止距离，小于该距离，停止自动飞行 -->
 			<param name="local_planner/safe_distance" value="0.01" type="double"/>
@@ -129,8 +129,8 @@
 			<!-- 感知距离，只考虑感知距离内的障碍物 -->
 			<param name="local_planner/sensor_max_range" value="4.0" type="double"/>  
 			<!-- weight -->
-			<param name="vfh/obstacle_weight" value="10.0" type="double"/>
-			<param name="vfh/goalWeight" value="0.1" type="double"/>
+<!--			<param name="vfh/obstacle_weight" value="10.0" type="double"/>-->
+<!--			<param name="vfh/goalWeight" value="0.1" type="double"/>-->
 			<param name="vfh/safe_distance" value="0.01" type="double"/>
 			<!-- 停止距离，小于该距离，停止自动飞行 -->
 			<param name="local_planner/safe_distance" value="0.01" type="double"/>

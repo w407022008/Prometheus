@@ -70,22 +70,16 @@ void Occupy_map::map_update_gpcl(const sensor_msgs::PointCloud2ConstPtr & global
 }
 
 // 地图更新函数 - 输入：RGBD相机、三维激光雷达
-void Occupy_map::map_update_lpcl(const sensor_msgs::PointCloud2ConstPtr & local_point, const nav_msgs::Odometry & odom)
+void Occupy_map::map_update_lpcl(const sensor_msgs::PointCloud2ConstPtr & local_point)
 {
-    /* need odom_ for center radius sensing */
-    if ((odom.header.stamp - ros::Time::now()).toSec() > 0.01 || (!is_rgbd && !is_lidar)) 
-    {
-    	cout << "odom: Time out" << endl;
+    if(!is_rgbd && !is_lidar)
         return;
-    }
-
-    has_global_point = true;
-
+    
 	tf::StampedTransform transform;
 	if (is_rgbd)
 		try{
-			tfListener.waitForTransform("/map","/realsense_camera_link",ros::Time(0),ros::Duration(4.0));
-			tfListener.lookupTransform("/map", "/realsense_camera_link", ros::Time(0), transform);
+			tfListener.waitForTransform("/map","/realsense_camera_link",local_point->header.stamp,ros::Duration(4.0));
+			tfListener.lookupTransform("/map", "/realsense_camera_link", local_point->header.stamp, transform);
 		}
 			catch (tf::TransformException ex){
 			ROS_ERROR("%s",ex.what());
@@ -94,8 +88,8 @@ void Occupy_map::map_update_lpcl(const sensor_msgs::PointCloud2ConstPtr & local_
 
 	if (is_lidar)
 		try{
-			tfListener.waitForTransform("/map","/3Dlidar_link",ros::Time(0),ros::Duration(4.0));
-			tfListener.lookupTransform("/map", "/3Dlidar_link", ros::Time(0), transform);
+			tfListener.waitForTransform("/map","/3Dlidar_link",local_point->header.stamp,ros::Duration(4.0));
+			tfListener.lookupTransform("/map", "/3Dlidar_link", local_point->header.stamp, transform);
 		}
 			catch (tf::TransformException ex){
 			ROS_ERROR("%s",ex.what());
@@ -106,15 +100,13 @@ void Occupy_map::map_update_lpcl(const sensor_msgs::PointCloud2ConstPtr & local_
 	tf::Quaternion q = transform.getRotation();
 	tf::Vector3 Origin = tf::Vector3(transform.getOrigin().getX(),transform.getOrigin().getY(),transform.getOrigin().getZ());
 
-
 //    tf::Quaternion q;
 //    tf::quaternionMsgToTF(odom.pose.pose.orientation,q); 
 //	tf::Vector3 Origin = tf::Vector3(odom.pose.pose.position.x,odom.pose.pose.position.y,odom.pose.pose.position.z);
+	
     double roll,pitch,yaw;
     tf::Matrix3x3(q).getRPY(roll,pitch,yaw);
     Eigen::Matrix3f Rotation = get_rotation_matrix(roll, pitch, yaw);
-
-
 
 
 	pcl::PointCloud<pcl::PointXYZ> latest_local_pcl_;
@@ -176,7 +168,7 @@ void Occupy_map::map_update_lpcl(const sensor_msgs::PointCloud2ConstPtr & local_
 	
 	local_point_cloud += _pointcloud;
 
-	if (local_point_cloud.points.size()>10000){
+	if (local_point_cloud.points.size()>5000){
 		pcl::VoxelGrid<pcl::PointXYZ> sor;
 		sor.setInputCloud(local_point_cloud.makeShared());
 		sor.setLeafSize(2*resolution_, 2*resolution_, 2*resolution_);
@@ -185,23 +177,38 @@ void Occupy_map::map_update_lpcl(const sensor_msgs::PointCloud2ConstPtr & local_
 	}
 	
 	local_point_cloud.header.seq++;
-	local_point_cloud.header.stamp = (ros::Time::now ()).toNSec()/1e3;
+	local_point_cloud.header.stamp = (local_point->header.stamp).toNSec()/1e3;
 	local_point_cloud.header.frame_id = "/map";
 
 	pcl::toROSMsg(local_point_cloud, global_env_);
+    has_global_point = true;
+
 }
 
 // 地图更新函数 - 输入：2维激光雷达
-void Occupy_map::map_update_laser(const sensor_msgs::LaserScanConstPtr & local_point, const nav_msgs::Odometry & odom)
+void Occupy_map::map_update_laser(const sensor_msgs::LaserScanConstPtr & local_point)
 {
-    /* need odom_ for center radius sensing */
-    if ((odom.header.stamp - ros::Time::now()).toSec() > 0.01) 
-    {
-    	cout << "odom: Time out" << endl;
-        return;
-    }
+	tf::StampedTransform transform;
+	if (is_2D)
+		try{
+			tfListener.waitForTransform("/map","/lidar_link",local_point->header.stamp,ros::Duration(4.0));
+			tfListener.lookupTransform("/map", "/lidar_link", local_point->header.stamp, transform);
+		}
+			catch (tf::TransformException ex){
+			ROS_ERROR("%s",ex.what());
+			ros::Duration(1.0).sleep();
+		}
+	
+	tf::Quaternion q = transform.getRotation();
+	tf::Vector3 Origin = tf::Vector3(transform.getOrigin().getX(),transform.getOrigin().getY(),transform.getOrigin().getZ());
 
-    has_global_point = true;
+//    tf::Quaternion q;
+//    tf::quaternionMsgToTF(odom.pose.pose.orientation,q); 
+//	tf::Vector3 Origin = tf::Vector3(odom.pose.pose.position.x,odom.pose.pose.position.y,odom.pose.pose.position.z);
+	
+    double roll,pitch,yaw;
+    tf::Matrix3x3(q).getRPY(roll,pitch,yaw);
+    Eigen::Matrix3f R_Body_to_ENU = get_rotation_matrix(roll, pitch, yaw);
 
     sensor_msgs::LaserScan::ConstPtr _laser_scan;
 
@@ -215,11 +222,6 @@ void Occupy_map::map_update_laser(const sensor_msgs::LaserScanConstPtr & local_p
     double newPointAngle;
 
     int beamNum = _laser_scan->ranges.size();
-    tf::Quaternion RQ2;
-    tf::quaternionMsgToTF(odom.pose.pose.orientation,RQ2); 
-    double roll,pitch,yaw;
-    tf::Matrix3x3(RQ2).getRPY(roll,pitch,yaw);
-    Eigen::Matrix3f R_Body_to_ENU = get_rotation_matrix(roll, pitch, yaw);
     for (int i = 0; i < beamNum; i++)
     {
     	if(_laser_scan->ranges[i] < inflate_) continue;
@@ -228,9 +230,9 @@ void Occupy_map::map_update_laser(const sensor_msgs::LaserScanConstPtr & local_p
         _laser_point_body_body_frame[1] = _laser_scan->ranges[i] * sin(newPointAngle);
         _laser_point_body_body_frame[2] = 0.0;
         _laser_point_body_ENU_frame = R_Body_to_ENU * _laser_point_body_body_frame;
-        newPoint.x = odom.pose.pose.position.x + _laser_point_body_ENU_frame[0];
-        newPoint.y = odom.pose.pose.position.y + _laser_point_body_ENU_frame[1];
-        newPoint.z = odom.pose.pose.position.z + _laser_point_body_ENU_frame[2];
+        newPoint.x = Origin.getX() + _laser_point_body_ENU_frame[0];
+        newPoint.y = Origin.getY() + _laser_point_body_ENU_frame[1];
+        newPoint.z = Origin.getZ() + _laser_point_body_ENU_frame[2];
         
         _pointcloud.push_back(newPoint);
     }	
@@ -272,7 +274,7 @@ void Occupy_map::map_update_laser(const sensor_msgs::LaserScanConstPtr & local_p
 	
 	local_point_cloud += _pointcloud;
 
-	if (local_point_cloud.points.size()>10000){
+	if (local_point_cloud.points.size()>5000){
 		pcl::VoxelGrid<pcl::PointXYZ> sor;
 		sor.setInputCloud(local_point_cloud.makeShared());
 		sor.setLeafSize(2*resolution_, 2*resolution_, 2*resolution_);
@@ -284,6 +286,9 @@ void Occupy_map::map_update_laser(const sensor_msgs::LaserScanConstPtr & local_p
 	local_point_cloud.header.frame_id = "/map";
 
 	pcl::toROSMsg(local_point_cloud, global_env_);
+	
+    has_global_point = true;
+
 }
 
 // 当global_planning节点接收到点云消息更新时，进行设置点云指针并膨胀

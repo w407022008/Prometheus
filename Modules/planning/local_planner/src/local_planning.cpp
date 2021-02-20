@@ -190,7 +190,6 @@ void Local_Planner::goal_cb(const geometry_msgs::PoseStampedConstPtr& msg)
 void Local_Planner::drone_state_cb(const prometheus_msgs::DroneStateConstPtr& msg)
 {
     _DroneState = *msg; // ENU系
-    R_Body_to_ENU = get_rotation_matrix(_DroneState.attitude[0], _DroneState.attitude[1], _DroneState.attitude[2]);
 
     if (is_2D == true)
     {
@@ -241,20 +240,35 @@ void Local_Planner::Callback_2dlaserscan(const sensor_msgs::LaserScanConstPtr &m
     {
         return;
     }
-
-    sensor_ready = true;
-
+    
+	tf::StampedTransform transform;
+	if (is_2D)
+		try{
+			tfListener.waitForTransform("/map","/lidar_link",msg->header.stamp,ros::Duration(4.0));
+			tfListener.lookupTransform("/map", "/lidar_link", msg->header.stamp, transform);
+		}
+			catch (tf::TransformException ex){
+			ROS_ERROR("%s",ex.what());
+			ros::Duration(1.0).sleep();
+		}
+	
+	tf::Quaternion q = transform.getRotation();
+	tf::Vector3 Origin = tf::Vector3(transform.getOrigin().getX(),transform.getOrigin().getY(),transform.getOrigin().getZ());
+	
+    double roll,pitch,yaw;
+    tf::Matrix3x3(q).getRPY(roll,pitch,yaw);
+    Eigen::Matrix3f R_Body_to_ENU = get_rotation_matrix(roll, pitch, yaw);
+    
     sensor_msgs::LaserScan::ConstPtr _laser_scan;
-
     _laser_scan = msg;
 
     pcl::PointCloud<pcl::PointXYZ> _pointcloud;
-
     _pointcloud.clear();
+    
     pcl::PointXYZ newPoint;
     Eigen::Vector3f _laser_point_body_body_frame,_laser_point_body_ENU_frame;
+    
     double newPointAngle;
-
     int beamNum = _laser_scan->ranges.size();
     for (int i = 0; i < beamNum; i++)
     {
@@ -264,9 +278,9 @@ void Local_Planner::Callback_2dlaserscan(const sensor_msgs::LaserScanConstPtr &m
         _laser_point_body_body_frame[1] = _laser_scan->ranges[i] * sin(newPointAngle);
         _laser_point_body_body_frame[2] = 0.0;
         _laser_point_body_ENU_frame = R_Body_to_ENU * _laser_point_body_body_frame;
-        newPoint.x = _DroneState.position[0] + _laser_point_body_ENU_frame[0];
-        newPoint.y = _DroneState.position[1] + _laser_point_body_ENU_frame[1];
-        newPoint.z = _DroneState.position[2] + _laser_point_body_ENU_frame[2];
+        newPoint.x = Origin.getX() + _laser_point_body_ENU_frame[0];
+        newPoint.y = Origin.getY() + _laser_point_body_ENU_frame[1];
+        newPoint.z = Origin.getZ() + _laser_point_body_ENU_frame[2];
         
         _pointcloud.push_back(newPoint);
     }
@@ -274,7 +288,7 @@ void Local_Planner::Callback_2dlaserscan(const sensor_msgs::LaserScanConstPtr &m
 	
 	static int frame_id = 0;
 	if (frame_id == timeSteps_fusingSamples){
-		cout << "point cloud size: " << ", " << (int)concatenate_PointCloud.points.size();
+//		cout << "point cloud size: " << ", " << (int)concatenate_PointCloud.points.size();
 		if(flag_pcl_ground_removal){
 			
 			pcl::PassThrough<pcl::PointXYZ> ground_removal;
@@ -291,7 +305,7 @@ void Local_Planner::Callback_2dlaserscan(const sensor_msgs::LaserScanConstPtr &m
 			sor.setLeafSize(size_of_voxel_grid, size_of_voxel_grid, size_of_voxel_grid);
 			sor.filter(concatenate_PointCloud);
 		}
-		cout << " to " << (int)concatenate_PointCloud.points.size() << endl;
+//		cout << " to " << (int)concatenate_PointCloud.points.size() << endl;
 		
 		local_point_cloud = concatenate_PointCloud;
 		frame_id = 0;
@@ -302,12 +316,15 @@ void Local_Planner::Callback_2dlaserscan(const sensor_msgs::LaserScanConstPtr &m
 	}
 
 	local_point_cloud.header.seq++;
-	local_point_cloud.header.stamp = (ros::Time::now ()).toNSec()/1e3;
+	local_point_cloud.header.stamp = (msg->header.stamp).toNSec()/1e3;
 	local_point_cloud.header.frame_id = "/map";
 	point_cloud_pub.publish(local_point_cloud);
 
 	pcl_ptr = local_point_cloud.makeShared();
     local_alg_ptr->set_local_map_pcl(pcl_ptr);
+    
+    sensor_ready = true;
+
 }
 
 void Local_Planner::Callback_3dpointcloud(const sensor_msgs::PointCloud2ConstPtr &msg)
@@ -321,8 +338,8 @@ void Local_Planner::Callback_3dpointcloud(const sensor_msgs::PointCloud2ConstPtr
 	tf::StampedTransform transform;
 	if (is_rgbd)
 		try{
-			tfListener.waitForTransform("/map","/realsense_camera_link",ros::Time(0),ros::Duration(4.0));
-			tfListener.lookupTransform("/map", "/realsense_camera_link", ros::Time(0), transform);
+			tfListener.waitForTransform("/map","/realsense_camera_link",msg->header.stamp,ros::Duration(4.0));
+			tfListener.lookupTransform("/map", "/realsense_camera_link", msg->header.stamp, transform);
 		}
 			catch (tf::TransformException ex){
 			ROS_ERROR("%s",ex.what());
@@ -331,24 +348,19 @@ void Local_Planner::Callback_3dpointcloud(const sensor_msgs::PointCloud2ConstPtr
 
 	if (is_lidar)
 		try{
-			tfListener.waitForTransform("/map","/3Dlidar_link",ros::Time(0),ros::Duration(4.0));
-			tfListener.lookupTransform("/map", "/3Dlidar_link", ros::Time(0), transform);
+			tfListener.waitForTransform("/map","/3Dlidar_link",msg->header.stamp,ros::Duration(4.0));
+			tfListener.lookupTransform("/map", "/3Dlidar_link", msg->header.stamp, transform);
 		}
 			catch (tf::TransformException ex){
 			ROS_ERROR("%s",ex.what());
 			ros::Duration(1.0).sleep();
 		}
 	
+
 	tf::Quaternion q = transform.getRotation();
 	tf::Matrix3x3 Rotation(q);
 
-    sensor_ready = true;
-
 	pcl::fromROSMsg(*msg, latest_local_pcl_);
-	
-//	cout << "point_size: " << (int)latest_local_pcl_.points.size() << endl;
-//	cout << "point 1: " << latest_local_pcl_.points[0].x << ", " << latest_local_pcl_.points[0].y << ", " << latest_local_pcl_.points[0].z << endl;
-
 	
     pcl::PointCloud<pcl::PointXYZ> _pointcloud;
 
@@ -372,7 +384,6 @@ void Local_Planner::Callback_3dpointcloud(const sensor_msgs::PointCloud2ConstPtr
 	
 	static int frame_id = 0;
 	if (frame_id == timeSteps_fusingSamples){
-		cout << "point cloud size: " << ", " << (int)concatenate_PointCloud.points.size();
 		if(flag_pcl_ground_removal){
 			
 			pcl::PassThrough<pcl::PointXYZ> ground_removal;
@@ -389,7 +400,6 @@ void Local_Planner::Callback_3dpointcloud(const sensor_msgs::PointCloud2ConstPtr
 			sor.setLeafSize(size_of_voxel_grid, size_of_voxel_grid, size_of_voxel_grid);
 			sor.filter(concatenate_PointCloud);
 		}
-		cout << " to " << (int)concatenate_PointCloud.points.size() << endl;
 		
 		local_pcl_tm1 = concatenate_PointCloud;
 		frame_id = 0;
@@ -418,7 +428,7 @@ void Local_Planner::Callback_3dpointcloud(const sensor_msgs::PointCloud2ConstPtr
 //	cout << "[ [" << Rotation[0][0] << ", " << Rotation[0][1] << ", " << Rotation[0][2] << "]," << endl;
 //	cout << "  [" << Rotation[1][0] << ", " << Rotation[1][1] << ", " << Rotation[1][2] << "]," << endl;
 //	cout << "  [" << Rotation[2][0] << ", " << Rotation[2][1] << ", " << Rotation[2][2] << "] ]" << endl;
-//	cout << "point_size: " << (int)local_point_cloud.points.size() << endl;
+	cout << "local obstacle points size: " << (int)local_point_cloud.points.size() << endl;
 //	cout << "header.seq: " << (int)local_point_cloud.header.seq << endl;
 //	cout << "header.stamp: " << (int)local_point_cloud.header.stamp << endl;
 //	cout << "header.frame_id: " << local_point_cloud.header.frame_id << endl;
@@ -427,6 +437,9 @@ void Local_Planner::Callback_3dpointcloud(const sensor_msgs::PointCloud2ConstPtr
 
 	pcl_ptr = local_point_cloud.makeShared();
     local_alg_ptr->set_local_map_pcl(pcl_ptr);
+    
+    sensor_ready = true;
+
 }
 
 void Local_Planner::localcloudCallback(const sensor_msgs::PointCloud2ConstPtr &msg)

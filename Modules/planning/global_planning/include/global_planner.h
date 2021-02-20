@@ -50,7 +50,7 @@ private:
     double safe_distance;
     double time_per_path;
     int map_input;
-    double replan_time;
+    double replan_time, tracking_start_time;
     bool consider_neighbour;
     bool sim_mode;
     bool map_groundtruth;
