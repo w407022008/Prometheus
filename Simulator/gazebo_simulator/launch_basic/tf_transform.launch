@@ -1,47 +1,79 @@
 <launch>
-        <!-- 关于坐标系转换请参看文档相关说明 -->
-        <!-- 仿真中引入world系和map系,实际实验中一般world系即map系 -->
-        <!-- world: 世界系,即gazebo坐标系 -->
-        <!-- map:   以飞机起飞点为原点的坐标系  -->
-        <!-- base_link: 机体坐标系 -->
-        <!-- 注意，当无人机起飞点不在 0,0,0时, gazebo中的坐标系并非与map系的原点重合 -->
-        <arg name="x" default="0"/>
-        <arg name="y" default="0"/>
-        <arg name="z" default="0"/>
+    <!-- 关于坐标系转换请参看文档相关说明 -->
+    <!-- 仿真中引入world系和map系,实际实验中一般world系即map系 -->
+    <!-- world: 世界系,即gazebo坐标系 -->
+    <!-- map:   以飞机起飞点为原点的坐标系  -->
+    <!-- base_link: 机体坐标系 -->
+    <!-- 注意，当无人机起飞点不在 0,0,0时, gazebo中的坐标系并非与map系的原点重合 -->
+    <arg name="x" default="0"/>
+    <arg name="y" default="0"/>
+    <arg name="z" default="0"/>
 	<arg name="R" default="0"/>
-        <arg name="P" default="0"/>
-        <arg name="Y" default="0"/>
+    <arg name="P" default="0"/>
+    <arg name="Y" default="0"/>
+    <arg name="is_isir" default="false"/>
 
-        <!-- TF for world-->
-        <!-- 统一mavros发布的map系与world系 -->
-        <node pkg="tf" type="static_transform_publisher" name="tf_world_map"
-          	args="0 0 0 0 0 0 world map 100"/>
+    <!-- TF for world-->
+    <!-- 统一mavros发布的map系与world系 -->
+    <node pkg="tf" type="static_transform_publisher" name="tf_world_map"
+      	args="0 0 0 0 0 0 world map 100"/>
 
-        <!-- TF for realsense_camera-->
-        <!-- realsense_camera_link是D435i坐标系 -->
-        <!-- 机体系与realsense_camera_link的坐标转换关系见 P300_D435i.sdf -->
-        <node pkg="tf" type="static_transform_publisher" name="tf_realsense_camera"
-                args="0.2 0 -0.1 -1.57 0 -1.57 base_link realsense_camera_link 100"/>
+    <!-- Ros transformation -->
+    <node pkg="tf" type="static_transform_publisher" name="tf_local_origin"
+      	args="0 0 0 0 0 0 world odom 10"/>
 
-        <!-- TF for 3D lidar-->
-        <!-- 3Dlidar_link是3D激光雷达坐标系 -->
-        <!-- 机体系与3Dlidar_link的坐标转换关系见 amov_solo_3Dlidar.sdf -->
-  	<node pkg="tf" type="static_transform_publisher" name="tf_3Dlidar"
-          	args="0 0 0.15 0 0 0 base_link 3Dlidar_link 100"/>
+	<!-- ===================== MAV_ISIR ===================== -->
+	<group if="$(arg is_isir)">
+		<!-- TF for depth_camera-->
+		<!-- depth_camera_frame 是 depth_camera 坐标系 -->
+		<!-- 机体系与 depth_camera 的坐标转换关系见 mav_isir.sdf -->
+		<node pkg="tf" type="static_transform_publisher" name="tf_depth_camera"
+		        args="0.0809 0.0 0.104 0 0 0 base_link quad_isir/depth_camera_frame 100"/>
 
-        <!-- TF for 2D lidar-->
-        <!-- 2Dlidar_link是2D激光雷达坐标系 -->
-        <!-- 机体系与2Dlidar_link的坐标转换关系见 P300_2Dlidar.sdf -->
-  	<node pkg="tf" type="static_transform_publisher" name="tf_2Dlidar"
-          	args="0 0 0.2 0 0 0 base_link lidar_link 100"/>
+		<!-- TF for 1D Lasers-->
+		<!-- laser_hor_frame 是1D水平激光坐标系 -->
+		<!-- 机体系与 laser_hor_link 的坐标转换关系见 mav_isir.sdf -->
+	  	<node pkg="tf" type="static_transform_publisher" name="tf_1Dlasers"
+		  	args="0 0 0 0 0 0 base_link quad_isir/laser_hor_frame 100"/>
+		<!-- laser_upward_frame 是1D朝上激光坐标系 -->
+		<!-- 机体系与 laser_upward_link 的坐标转换关系见 mav_isir.sdf -->
+	  	<node pkg="tf" type="static_transform_publisher" name="tf_up_laser"
+		  	args="0.013208 0 0.1187 0 0 0 base_link quad_isir/laser_upward_frame 100"/>
+		<!-- laser_downward_frame 是1D朝下激光坐标系 -->
+		<!-- 机体系与 laser_downward_link 的坐标转换关系见 mav_isir.sdf -->
+	  	<node pkg="tf" type="static_transform_publisher" name="tf_down_laser"
+		  	args="0.02 0 0.021 0 0 0 base_link quad_isir/laser_downward_frame 100"/>
 
-        <!-- ORB_SLAM的地图坐标系与map坐标系之间的转换关系 -->
+		<!-- TF for downward_px4flow_camera-->
+		<!-- px4flow_frame 是2D激光雷达坐标系 -->
+		<!-- 机体系与 px4flow_camera 的坐标转换关系见 quad_isir.sdf -->
+	  	<node pkg="tf" type="static_transform_publisher" name="tf_px4flow_camera"
+		  	args="-0.000102 -0.008357 0.029 0 0 0 base_link quad_isir/px4flow_frame 100"/>
+	</group>
+	
+	<!-- ===================== Prometheus ===================== -->
+	<group unless="$(arg is_isir)">
+		<!-- TF for realsense_camera-->
+		<!-- realsense_camera_link是D435i坐标系 -->
+		<!-- 机体系与realsense_camera_link的坐标转换关系见 P300_D435i.sdf -->
+		<node pkg="tf" type="static_transform_publisher" name="tf_realsense_camera"
+		        args="0.1 0 -0.1 -1.57 0 -1.57 base_link realsense_camera_link 100"/>
+
+		<!-- TF for 3D lidar-->
+		<!-- 3Dlidar_link是3D激光雷达坐标系 -->
+		<!-- 机体系与3Dlidar_link的坐标转换关系见 amov_solo_3Dlidar.sdf -->
+	  	<node pkg="tf" type="static_transform_publisher" name="tf_3Dlidar"
+		  	args="0 0 0.25 0 0 0 base_link 3Dlidar_link 100"/>
+
+		<!-- TF for 2D lidar-->
+		<!-- 2Dlidar_link是2D激光雷达坐标系 -->
+		<!-- 机体系与2Dlidar_link的坐标转换关系见 P300_2Dlidar.sdf -->
+	  	<node pkg="tf" type="static_transform_publisher" name="tf_2Dlidar"
+		  	args="0 0 0.5 0 0 0 base_link lidar_link 100"/>
+	</group>
+	<!-- ORB_SLAM的地图坐标系与map坐标系之间的转换关系 -->
   	<!-- <node pkg="tf" type="static_transform_publisher" name="tf_slam2map"
-          	args="0 0 0 0 0 0 map map_slam 100"/> -->
-
-        <!-- Ros transformation -->
-        <node pkg="tf" type="static_transform_publisher" name="tf_local_origin"
-          	args="0 0 0 0 0 0 world odom 10"/>
+  		args="0 0 0 0 0 0 map map_slam 100"/> -->
 
 </launch>
 

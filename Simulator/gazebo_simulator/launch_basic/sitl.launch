@@ -1,9 +1,12 @@
 <launch>
 	<!-- 启动PX4中的SITL功能 -->
+	<arg name="is_isir" default="false"/>
+    <arg if="$(arg is_isir)" name="vehicle" default="quad_isir"/>
+    <arg unless="$(arg is_isir)" name="vehicle" default="solo"/>
 	<!-- 这里的环境变量将传递到rcS启动脚本中-->
 	<!-- 参看 ~/Firmware_v110/ROMFS/px4fmu_common/init.d-posix/rcS 中的修改内容 -->
 	<!-- 模型选择 -->
-	<env name="PX4_SIM_MODEL" value="solo" />
+	<env name="PX4_SIM_MODEL" value="$(arg vehicle)" />
 	<!-- 估计器参数选择 可选ekf2_vision和ekf2_gps-->
 	<!-- ekf2_gps 使用GPS作为定位来源， ekf2_vision 使用外部输入（gazebo真值、slam等）作为定位来源-->
 	<env name="PX4_ESTIMATOR" value="ekf2_vision" />
@@ -45,8 +48,10 @@
 	<arg name="R" default="0"/>
 	<arg name="P" default="0"/>
 	<arg name="Y" default="0.0"/>
-	<arg name="sdf" default="$(find prometheus_gazebo)/amov_models/amov_solo_D435i/amov_solo_D435i.sdf"/>
-	<arg name="model" default="amov_solo"/>
+    <arg if="$(arg is_isir)" name="sdf" default="$(find mavlink_sitl_gazebo)/models/$(arg vehicle)/$(arg vehicle).sdf"/>
+    <arg if="$(arg is_isir)" name="model" default="$(arg vehicle)"/>
+	<arg unless="$(arg is_isir)" name="sdf" default="$(find prometheus_gazebo)/amov_models/amov_solo_D435i/amov_solo_D435i.sdf"/>
+	<arg unless="$(arg is_isir)" name="model" default="amov_solo"/>
 	<node name="$(anon vehicle_spawn)" pkg="gazebo_ros" type="spawn_model" output="screen" 
 		args="-sdf -file $(arg sdf) -model $(arg model) -x $(arg x) -y $(arg y) -z $(arg z) -R $(arg R) -P $(arg P) -Y $(arg Y)">
 	</node>
@@ -63,6 +68,7 @@
 	
 	<!-- 定义传感器TF transform -->
 	<include file="$(find prometheus_gazebo)/launch_basic/tf_transform.launch">
+		<arg name="is_isir" value="$(arg is_isir)"/>
 		<arg name="x" value="$(arg x)"/>
 		<arg name="y" value="$(arg y)"/>
 		<arg name="z" value="$(arg z)"/>
