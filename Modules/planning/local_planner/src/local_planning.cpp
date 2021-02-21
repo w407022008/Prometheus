@@ -23,15 +23,14 @@ void Local_Planner::init(ros::NodeHandle& nh)
     nh.param("local_planner/timeSteps_fusingSamples", timeSteps_fusingSamples, 4);
     // TRUE代表2D平面规划及搜索,FALSE代表3D 
     nh.param("local_planner/is_2D", is_2D, false); 
-    nh.param("local_planner/is_rgbd", is_rgbd, false); 
-    nh.param("local_planner/is_lidar", is_lidar, false); 
-    if (is_2D) {
-    	is_rgbd = false; is_lidar = false;
-    }
     // 如果采用2维Lidar，需要一定的yawRate来探测地图
     nh.param("local_planner/control_yaw_flag", control_yaw_flag, false); 
     // 2D规划时,定高高度
     nh.param("local_planner/fly_height_2D", fly_height_2D, 1.0);  
+    
+    nh.param("local_planner/is_rgbd", is_rgbd, false); 
+    nh.param("local_planner/is_lidar", is_lidar, false); 
+    
     // 是否为仿真模式
     nh.param("local_planner/sim_mode", sim_mode, false); 
     // 最大速度
@@ -238,19 +237,19 @@ void Local_Planner::Callback_2dlaserscan(const sensor_msgs::LaserScanConstPtr &m
     /* need odom_ for center radius sensing */
     if (!odom_ready) 
     {
+//    	cout << "has odom?" << endl;
         return;
     }
     
 	tf::StampedTransform transform;
-	if (is_2D)
-		try{
-			tfListener.waitForTransform("/map","/lidar_link",msg->header.stamp,ros::Duration(4.0));
-			tfListener.lookupTransform("/map", "/lidar_link", msg->header.stamp, transform);
-		}
-			catch (tf::TransformException ex){
-			ROS_ERROR("%s",ex.what());
-			ros::Duration(1.0).sleep();
-		}
+	try{
+		tfListener.waitForTransform("/map","/lidar_link",msg->header.stamp,ros::Duration(4.0));
+		tfListener.lookupTransform("/map", "/lidar_link", msg->header.stamp, transform);
+	}
+		catch (tf::TransformException ex){
+		ROS_ERROR("%s",ex.what());
+		ros::Duration(1.0).sleep();
+	}
 	
 	tf::Quaternion q = transform.getRotation();
 	tf::Vector3 Origin = tf::Vector3(transform.getOrigin().getX(),transform.getOrigin().getY(),transform.getOrigin().getZ());
@@ -332,6 +331,7 @@ void Local_Planner::Callback_3dpointcloud(const sensor_msgs::PointCloud2ConstPtr
     /* need odom_ for center radius sensing */
     if (!odom_ready || (!is_rgbd && !is_lidar)) 
     {
+//    	cout << "has odom? is_rgbd or is_lidar?" << endl;
         return;
     }
 
@@ -544,7 +544,7 @@ void Local_Planner::control_cb(const ros::TimerEvent& e)
         ref_vel[1] = desired_vel[1];
         //ref_vel[2] = desired_vel[2];
 
-        if( sqrt( ref_vel[1]* ref_vel[1] + ref_vel[0]* ref_vel[0])  >  0.05  )
+        if( sqrt( ref_vel[1]* ref_vel[1] + ref_vel[0]* ref_vel[0])  >  0.05 || exec_state == EXEC_STATE::PLANNING)
         {
         	float next_desired_yaw_vel = sign(ref_vel(1)) * acos(ref_vel(0) / ref_vel.norm());
 //			cout << "desired_yaw " << desired_yaw << ", next_desired_yaw_vel " << next_desired_yaw_vel << endl;

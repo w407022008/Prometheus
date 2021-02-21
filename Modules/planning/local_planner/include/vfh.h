@@ -34,7 +34,7 @@ private:
     double inflate_distance;
     double sensor_max_range;
     double safe_distance;
-    double inflate_and_safe_distance;
+    double inflate_plus_safe_distance;
     double ground_height;
     double limit_v_norm;
     double  Hres;
@@ -47,18 +47,20 @@ private:
 	// bool 参数
     bool has_local_map_;
     bool has_odom_;
-    bool is_2D;
+    bool is_2D,isCylindrical,isSpherical;
 
 
 	// Histogram
-    double* Histogram;
+    double* Histogram_2d;
+    double** Histogram_3d;
 
     pcl::PointCloud<pcl::PointXYZ> latest_local_pcl_;
     sensor_msgs::PointCloud2ConstPtr  local_map_ptr_;
     nav_msgs::Odometry cur_odom_;
 
     void PolarCoordinateVFH(double angle_cen, double angle_range, double val);
-    int find_optimization_path(void);
+    void CylindricalCoordinateVFH(double hor_angle_cen, double angle_range, double val);
+    void SphericalCoordinateVFH(double hor_angle_cen, double ver_angle_cen, double angle_range, double val);
 
 public:
 
@@ -70,7 +72,12 @@ public:
 
     VFH(){}
     ~VFH(){
-        delete Histogram;
+        delete Histogram_2d;
+        if (is_2D){
+		    for(int i = 0; i < Vcnt; i++)
+				delete[] Histogram_3d[i];
+			delete[] Histogram_3d;
+        }
     }
 
     typedef shared_ptr<VFH> Ptr;

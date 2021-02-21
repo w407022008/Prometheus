@@ -7,6 +7,9 @@
 	<arg name="visualization" default="true"/>
 	<arg name="setup_rtabmap" default="false" />  <!-- rtabmap 启动特别慢 -->
 	<arg name="mapper_enable" default="false" />  <!-- true: 使用建图数据; false: 使用传感器原始数据 -->
+	<arg name="octomap_ground_filter_out" default="false"/>
+	<arg     if="$(arg octomap_ground_filter_out)" name="octomap_ground_removal"  default="false"/>
+	<arg unless="$(arg octomap_ground_filter_out)" name="octomap_ground_removal"  default="true"/>
 	<arg name="depth_mode" default="true"/><!-- rtabmap 双目、深度信息需要开启 realsense_plugin; 深度信息也可以开启 openni_kinect; octomap 点云信息可以开通 openni_kinect 或 depth_camera -->
 
 	<arg name="world" default="$(find prometheus_gazebo)/worlds/obstacle.world"/>
@@ -66,6 +69,9 @@
 			<param name="local_planner/planner_enable" value="true" type="bool"/>
 			<!-- 二维平面规划 -->
 			<param name="local_planner/is_2D" value="false" type="bool"/>
+			<param name="vfh/isCylindrical" value="false" type="bool"/>
+			<param name="vfh/isSpherical" value="true" type="bool"/>
+			<param name="local_planner/is_rgbd" value="true" type="bool"/>
 			<param name="local_planner/control_yaw_flag" value="true" type="bool"/>
 			<!-- 选择算法 0代表APF,1代表VFH -->
 			<param name="local_planner/algorithm_mode" value="1" type="int"/>
@@ -80,7 +86,8 @@
 			<!-- weight -->
 <!--			<param name="vfh/obstacle_weight" value="10.0" type="double"/>-->
 <!--			<param name="vfh/goalWeight" value="0.1" type="double"/>-->
-			<param name="vfh/safe_distance" value="0.01" type="double"/>
+			<<param name="vfh/h_cnt" value="60" type="double"/>
+			<param name="vfh/v_cnt" value="10" type="double"/>
 			<!-- 停止距离，小于该距离，停止自动飞行 -->
 			<param name="local_planner/safe_distance" value="0.01" type="double"/>
 		</node>	
@@ -99,6 +106,27 @@
 			<param name="sensor_model/max_range" value="5.0" />
 			<!-- data source to integrate (PointCloud2) -->
 			<remap from="cloud_in" to="/realsense_plugin/camera/local_pointclouds" />
+			
+			<!-- 地面分割滤除 -->
+			<!-- base_frame_id -->
+			<param if="$(arg octomap_ground_filter_out)" name="base_frame_id" type="string" value="world" />
+			<!-- 地面是否滤除 -->
+			<param if="$(arg octomap_ground_filter_out)" name="filter_ground " type="bool" value="$(arg octomap_ground_filter_out)" />
+			<!-- 地面点域, Distance threshold for points (in z direction) to be segmented to the ground plane, by default 0.04 -->
+			<param if="$(arg octomap_ground_filter_out)" name="ground_filter/distance" value="0.2" />
+			<!-- 滤除平面识别, Angular threshold of the detected plane from the horizontal plane to be detected as ground, by default 0.15 -->
+			<param if="$(arg octomap_ground_filter_out)" name="ground_filter/angle" value="0.2" />
+			<!-- 滤除平面高度, Distance threshold from z=0 for a plane to be detected as ground, by default 0.07 -->
+			<param if="$(arg octomap_ground_filter_out)" name="ground_filter/plane_distance" value="0.5" />
+			
+			<!-- 直通滤除地面 -->
+<!--			<param if="$(arg octomap_ground_removal)" name="pointcloud_min_x " value="" />-->
+<!--			<param if="$(arg octomap_ground_removal)" name="pointcloud_max_x " value="" />-->
+<!--			<param if="$(arg octomap_ground_removal)" name="pointcloud_min_y " value="" />-->
+<!--			<param if="$(arg octomap_ground_removal)" name="pointcloud_max_y " value="" />-->
+			<param if="$(arg octomap_ground_removal)" name="pointcloud_min_z " value="0.15" />
+<!--			<param if="$(arg octomap_ground_removal)" name="pointcloud_max_z " value="" />-->
+			
 		</node>
 		
 		<!-- 启动局部规划算法 -->
@@ -111,6 +139,9 @@
 			<param name="local_planner/sim_mode" value="true" type="bool"/>
 			<param name="local_planner/planner_enable" value="true" type="bool"/>
 			<!-- 二维平面规划 -->
+			<param name="local_planner/is_2D" value="false" type="bool"/>
+			<param name="vfh/isCylindrical" value="false" type="bool"/>
+			<param name="vfh/isSpherical" value="true" type="bool"/>
 			<param name="local_planner/is_rgbd" value="true" type="bool"/>
 			<param name="local_planner/control_yaw_flag" value="true" type="bool"/>
 			<!-- 选择算法 0代表APF,1代表VFH -->
@@ -121,7 +152,7 @@
 			<param name="local_planner/ground_removal" value="true" type="bool"/>
 			<param name="local_planner/max_ground_height" value="0.3" type="double"/>
 			<param name="local_planner/downsampling" value="true" type="bool"/>
-			<param name="local_planner/resolution" value="0.1" type="double"/>
+			<param name="local_planner/resolution" value="0.2" type="double"/>
 			<!-- 最大速度，设的越小越安全 -->
 			<param name="local_planner/max_planning_vel" value="0.5" type="double"/>
 			<!-- 膨胀参数，一般设置为无人机的半径或更大 -->
@@ -131,7 +162,8 @@
 			<!-- weight -->
 <!--			<param name="vfh/obstacle_weight" value="10.0" type="double"/>-->
 <!--			<param name="vfh/goalWeight" value="0.1" type="double"/>-->
-			<param name="vfh/safe_distance" value="0.01" type="double"/>
+			<param name="vfh/h_cnt" value="60" type="double"/>
+			<param name="vfh/v_cnt" value="10" type="double"/>
 			<!-- 停止距离，小于该距离，停止自动飞行 -->
 			<param name="local_planner/safe_distance" value="0.01" type="double"/>
 		</node>	
