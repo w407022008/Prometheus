@@ -181,7 +181,7 @@ int APF::compute_force(Eigen::Vector3d &goal, Eigen::Vector3d &desired_vel)
 
     // 地面排斥力
     if (current_pos[2] <2*ground_safe_height)
-		repulsive_force += Eigen::Vector3d(0.0, 0.0, 1.0) * k_push * (1/(max(ground_safe_height,current_pos[2]) - ground_safe_height + 1e-6) - 1/(2*ground_safe_height));
+		repulsive_force += Eigen::Vector3d(0.0, 0.0, 1.0) * k_push * (1/max(max(ground_safe_height,current_pos[2]) - ground_safe_height, 1e-6) - 1/(ground_safe_height));
 
     // 合力
     desired_vel = 0.3*repulsive_force + 0.4*attractive_force + 0.3*guid_force; // ENU frame

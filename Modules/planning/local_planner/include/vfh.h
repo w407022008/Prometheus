@@ -59,7 +59,7 @@ private:
     nav_msgs::Odometry cur_odom_;
 
     void PolarCoordinateVFH(double angle_cen, double angle_range, double val);
-    void CylindricalCoordinateVFH(double hor_angle_cen, double angle_range, double val);
+    void CylindricalCoordinateVFH(double hor_angle_cen, double ver_angle_cen, double idx_range, double hor_obs_dist, double val);
     void SphericalCoordinateVFH(double hor_angle_cen, double ver_angle_cen, double angle_range, double val);
 
 public:

@@ -74,16 +74,16 @@
 			<!-- 0代表建图数据类型octomap<sensor_msgs::PointCloud2>,1代表2d传感器数据类型<sensor_msgs::LaserScan>,2代表3d传感器数据类型<sensor_msgs::PointCloud2> -->
 			-<param if="$(arg octomap_denied)" name="local_planner/map_input" value="1" type="int"/>
 			<param unless="$(arg octomap_denied)" name="local_planner/map_input" value="0" type="int"/>
-			<param name="local_planner/ground_removal" value="true" type="bool"/>
+			<param name="local_planner/ground_removal" value="false" type="bool"/>
 			<param name="local_planner/max_ground_height" value="0.5" type="double"/>
-			<param name="local_planner/downsampling" value="true" type="bool"/>
+			<param name="local_planner/downsampling" value="false" type="bool"/>
 			<param name="local_planner/resolution" value="0.1" type="double"/>
 			<!-- 飞行高度 -->
-			<param name="local_planner/is_2D" value="false" type="bool"/>
-			<param name="local_planner/fly_height_2D" value="1.0" type="double"/> <!-- 如果是二维的话有效 -->
-			<param name="vfh/isCylindrical" value="false" type="bool"/>
-			<param name="vfh/isSpherical" value="true" type="bool"/>
-			<param name="local_planner/is_lidar" value="$(arg octomap_denied)" type="bool"/>
+			<param name="local_planner/is_2D" value="false" type="bool"/> <!-- 2D规划，并采用2D直方图？ -->
+			<param name="local_planner/fly_height_2D" value="1.0" type="double"/> <!-- 如果是2D的话，则需要 -->
+			<param name="vfh/isCylindrical" value="true" type="bool"/> <!-- 如果3D，采用圆柱面直方图？ -->
+			<param name="vfh/isSpherical" value="false" type="bool"/> <!-- 如果3D，采用球面直方图？ -->
+			<param name="local_planner/is_lidar" value="$(arg octomap_denied)" type="bool"/> <!--如果map_input设定为传感器原始数据输入，那么激活lidar数据处理 -->
 			<param name="local_planner/control_yaw_flag" value="true" type="bool"/> <!-- 如果使用 2dLidar 就需要自旋以感知地图 -->
 			<!-- 最大速度，设的越小越安全 -->
 			<param name="local_planner/max_planning_vel" value="0.5" type="double"/>
@@ -163,11 +163,11 @@
 			<param name="local_planner/downsampling" value="true" type="bool"/>
 			<param name="local_planner/resolution" value="0.2" type="double"/>
 			<!-- 飞行高度 -->
-			<param name="local_planner/is_2D" value="false" type="bool"/>
-			<param name="vfh/isCylindrical" value="false" type="bool"/>
-			<param name="vfh/isSpherical" value="true" type="bool"/>
-			<param name="local_planner/is_lidar" value="$(arg octomap_denied)" type="bool"/>
-			<param name="local_planner/control_yaw_flag" value="false" type="bool"/> <!-- 如果使用 2dLidar 就需要自旋以感知地图 -->
+			<param name="local_planner/is_2D" value="false" type="bool"/> <!-- 2D规划，并采用2D直方图？ -->
+			<param name="local_planner/fly_height_2D" value="1.0" type="double"/> <!-- 如果是2D的话，则需要 -->
+			<param name="vfh/isCylindrical" value="false" type="bool"/> <!-- 如果3D，采用圆柱面直方图？ -->
+			<param name="vfh/isSpherical" value="true" type="bool"/> <!-- 如果3D，采用球面直方图？ -->
+			<param name="local_planner/is_lidar" value="$(arg octomap_denied)" type="bool"/> <!--如果map_input设定为传感器原始数据输入，那么激活lidar数据处理 -->
 			<!-- 最大速度，设的越小越安全 -->
 			<param name="local_planner/max_planning_vel" value="1.0" type="double"/>
 			<!-- 膨胀参数，一般设置为无人机的半径或更大 -->

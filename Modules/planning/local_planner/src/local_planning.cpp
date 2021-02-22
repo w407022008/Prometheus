@@ -157,6 +157,29 @@ void Local_Planner::planner_switch_cb(const std_msgs::Bool::ConstPtr& msg)
 
 void Local_Planner::goal_cb(const geometry_msgs::PoseStampedConstPtr& msg)
 {
+    if(_DroneState.connected == true){
+		if (_DroneState.armed == false){
+			// 起飞
+		    Command_Now.header.stamp = ros::Time::now();
+		    Command_Now.Mode  = prometheus_msgs::ControlCommand::Idle;
+		    Command_Now.Command_ID = Command_Now.Command_ID + 1;
+		    Command_Now.source = NODE_NAME;
+		    Command_Now.Reference_State.yaw_ref = 999;
+		    command_pub.publish(Command_Now);   
+		    cout << "Switch to OFFBOARD and arm ..."<<endl;
+		    ros::Duration(3.0).sleep();
+		    
+		    Command_Now.header.stamp = ros::Time::now();
+		    Command_Now.Mode = prometheus_msgs::ControlCommand::Takeoff;
+		    Command_Now.Command_ID = Command_Now.Command_ID + 1;
+		    Command_Now.source = NODE_NAME;
+		    command_pub.publish(Command_Now);
+		    cout << "Takeoff ..."<<endl;
+		    ros::Duration(3.0).sleep();
+		}
+	} else
+		cout << "Disconnected!" << endl;
+		
     if (is_2D == true)
     {
         goal_pos << msg->pose.position.x, msg->pose.position.y, fly_height_2D;
@@ -169,6 +192,7 @@ void Local_Planner::goal_cb(const geometry_msgs::PoseStampedConstPtr& msg)
     }
 
     goal_ready = true;
+    
 
     // 获得新目标点
     if(planner_enable){

@@ -14,6 +14,30 @@ auto sign=[](double v)->double
     return v<0.0? -1.0:1.0;
 };
 
+double average(double a[],int n)
+{
+	int sum=0;
+	for (int i=0;i<n;i++)
+		sum+=a[i];
+	return sum/n;
+}
+
+double minimum(double a[],int n)
+{
+	double min_val = a[0];
+	for (int i=1;i<n;i++)
+		if (a[i]<min_val)
+			min_val=a[i];
+	return min_val;
+}
+
+double normal(double input, double std)
+{
+	double u = 0; // mean
+//	double std = 0.4; // std
+    return exp(-0.5*((input-u)/std)*((input-u)/std));// input==0 -> 1; input==1 -> 0.04
+}
+
 void VFH::init(ros::NodeHandle& nh)
 {
     has_local_map_ = false;
@@ -161,27 +185,10 @@ int VFH::compute_force(Eigen::Vector3d  &goal, Eigen::Vector3d &desired_vel)
 		}else if (isCylindrical){
 		    if (fabs(uav2obs(2))>1) continue;
 		    
-		    double obs_hor_angle_cen = sign(uav2obs(1)) * acos(uav2obs(0) / Eigen::Vector3d(uav2obs(0),uav2obs(1),0.0).norm());// obs_hor_angle_cen: -pi ~ pi
-		    double angle_range;// angle_range: 0~pi/2
-		    if(obs_dist>inflate_plus_safe_distance)
-		        angle_range = asin(inflate_plus_safe_distance/obs_dist);
-		    else if (obs_dist<=inflate_plus_safe_distance)
-		    {
-		        angle_range = M_PI/2;
-		        safe_cnt++;  // 非常危险
-		    }
+		    double obs_hor_angle_cen = sign(uav2obs(1)) * acos(uav2obs(0) / Eigen::Vector3d(uav2obs(0),uav2obs(1),0.0).norm());// obs_hor_angle_cen: -pi ~ pi		    
+		    double obs_ver_idx_cen = min(double(Vcnt),max(0.0,Vcnt/2 + uav2obs(2)/Vres));
 		    
-		    double obs_ver_idx_cen = Vcnt/2 + uav2obs(2)/Vres;
-		    double idx_range;
-		    if(obs_dist>inflate_plus_safe_distance)
-		        idx_range = inflate_plus_safe_distance/Vres;
-		    else if (obs_dist<=inflate_plus_safe_distance)
-		    {
-		        idx_range = Vcnt/2;
-		        safe_cnt++;  // 非常危险
-		    }
-		    
-		    CylindricalCoordinateVFH(obs_hor_angle_cen, angle_range, obs_dist-inflate_plus_safe_distance);
+		    CylindricalCoordinateVFH(obs_hor_angle_cen, obs_ver_idx_cen, inflate_plus_safe_distance/Vres, Eigen::Vector3d(uav2obs(0),uav2obs(1),0.0).norm(), obs_dist-inflate_plus_safe_distance);
 		}else if (isSpherical){
 		    double angle_range;// angle_range: 0~pi/2
 		    if(obs_dist>inflate_plus_safe_distance)
@@ -196,26 +203,26 @@ int VFH::compute_force(Eigen::Vector3d  &goal, Eigen::Vector3d &desired_vel)
 		    double obs_ver_angle_cen = sign(uav2obs(2)) * acos(Eigen::Vector3d(uav2obs(0),uav2obs(1),0.0).norm() / uav2obs.norm());// obs_ver_angle_cen: -pi/2 ~ pi/2
 		    
 		    SphericalCoordinateVFH(obs_hor_angle_cen, obs_ver_angle_cen, angle_range, max(obs_dist-inflate_plus_safe_distance,1e-6));
-//			cout << "obs_dist: " << obs_dist << ", angle_range: " << angle_range << endl;
 		}
 
         obstacles.push_back(p3d);
     }
 //    cout << "size of obs considered: " << obstacles.size() << " w.s.t: " << latest_local_pcl_.points.size() << endl;
 
+// distance histogram
 //if (is_2D){
 //	for (int i=0; i<Hcnt; i++)
-//		cout<<Histogram_2d[i]<<", ";
-//	cout<< "" << endl;
-//	cout<< "" << endl;
+//		cout << Histogram_2d[i] < ", ";
+//	cout << "" << endl;
+//	cout << "" << endl;
 //}
 //else{
 //	for (int i=0; i<Vcnt; i++) {
 //		for (int j=0; j<Hcnt; j++) 
-//			cout<<Histogram_3d[i][j]<<", ";
-//		cout<< "" << endl;
+//			cout << Histogram_3d[i][j] << ", ";
+//		cout << "" << endl;
 //	}
-//	cout<< "" << endl;
+//	cout << "" << endl;
 //}
 
     // 目标点&当前速度 相关
@@ -234,7 +241,7 @@ int VFH::compute_force(Eigen::Vector3d  &goal, Eigen::Vector3d &desired_vel)
 //		    if (angle_err_vel>M_PI) angle_err_vel = 2*M_PI - angle_err_vel; // It'd better if used, but not necessary
 		    
 		    // 角度差的越小越好
-			if (hor_current_vel_norm>1e-6)
+			if (hor_current_vel_norm>0.1)
 		    	Histogram_2d[i] *= sqrt((cos(angle_err_goal)+1)/2 + (cos(angle_err_vel)+1)/2 * pow(hor_current_vel_norm/limit_v_norm,2));
 			else
 				Histogram_2d[i] *= sqrt((cos(angle_err_goal)+1)/2);
@@ -259,6 +266,63 @@ int VFH::compute_force(Eigen::Vector3d  &goal, Eigen::Vector3d &desired_vel)
 			desired_vel(2) = 0.0;
 		}
 	} else if (isCylindrical){
+		double goal_height_v = min(double(Vcnt),max(0.0,Vcnt/2 + uav2goal(2)/Vres)); // 0 ~ Vcnt
+		double goal_heading_h = sign(uav2goal(1)) * acos(uav2goal(0) / Eigen::Vector3d(uav2goal(0),uav2goal(1),0.0).norm()); // -pi ~ pi
+		double current_height_v = Vcnt/2;
+		double current_heading_h = sign(current_vel(1)) *acos(current_vel(0) / Eigen::Vector3d(current_vel(0),current_vel(1),0.0).norm()); // -pi ~ pi
+
+		for(int v=0; v<Vcnt; v++)
+			for(int h=0; h< Hcnt; h++){
+				double height_v = (v + 0.5); // 0 ~ Vcnt
+				double angle_h = (h + 0.5)* Hres; // 0 ~ 2pi
+				
+				double height_err_goal_v = fabs(height_v - goal_height_v)/Vcnt; // 0 ~ 1
+				double angle_err_goal_h = fabs(angle_h - (goal_heading_h<0 ? goal_heading_h+2*M_PI : goal_heading_h)); // 0 ~ 2*pi
+//				if (angle_err_goal_h>M_PI) angle_err_goal_h = 2*M_PI - angle_err_goal_h; // 0 ~ pi
+				
+				double height_err_vel_v = fabs(height_v - current_height_v)/Vcnt*2; // 0 ~ 1
+				double angle_err_vel_h = fabs(angle_h - (current_heading_h<0 ? current_heading_h+2*M_PI : current_heading_h)); // 0 ~ 2*pi
+//				if (angle_err_goal_h>M_PI) angle_err_goal_h = 2*M_PI - angle_err_goal_h; // 0 ~ pi
+
+				// 差的越小越好
+				if ( current_vel.norm()>0.1)
+					Histogram_3d[v][h] *= sqrt( normal(height_err_goal_v,0.4)*(cos(angle_err_goal_h)+1)/2 + normal(height_err_vel_v,0.3)*(cos(angle_err_vel_h)+1)/2 * pow(current_vel.norm()/limit_v_norm,2));
+				else
+					Histogram_3d[v][h] *= sqrt( normal(height_err_goal_v,0.4)*(cos(angle_err_goal_h)+1)/2); // adjustable: 0.4, 0.3
+			}
+
+		// 寻找最优方向
+		int best_idx[2];
+		best_idx[0] = -1;
+		best_idx[1] = -1;
+		double best_value = 0;
+		for(int i=0; i<Vcnt; i++)
+			for(int j=0; j<Hcnt; j++){
+				int width_ = 3; // width_extended
+				int half_width_ = (width_-1)/2;
+				double filter[width_*width_];
+				for (int u=0; u<width_; u++)
+					for (int v=0; v<width_; v++)
+						filter[u*width_+v] = Histogram_3d[i+u-half_width_<0 ? -(i+u-half_width_)-1 : (i+u-half_width_>=Vcnt ? 2*Vcnt-1-(i+u-half_width_) : i+u-half_width_)][i+u-half_width_<0 ? (j+v-half_width_<0 ? (j+v-half_width_+Hcnt/2)%Hcnt : (j+v-half_width_>=Hcnt ? (j+v-half_width_-Hcnt/2)%Hcnt : (j+v-half_width_+Hcnt/2)%Hcnt )) : (i+u-half_width_>=Vcnt ? (j+v-half_width_<0 ? (j+v-half_width_+Hcnt/2)%Hcnt : (j+v-half_width_>=Hcnt ? (j+v-half_width_-Hcnt/2)%Hcnt : (j+v-half_width_+Hcnt/2)%Hcnt )) : (j+v-half_width_<0 ? Hcnt+j+v-half_width_ : (j+v-half_width_>=Hcnt ? j+v-half_width_-Hcnt : j+v-half_width_)))];
+				double value_ = average(filter,width_*width_) + minimum(filter,width_*width_);
+				if(value_>best_value){
+				    best_value = value_;
+				    best_idx[0] = i;
+				    best_idx[1] = j;
+				}
+			}
+			
+		if (best_idx[0] == -1 || best_idx[1] == -1)
+			desired_vel = Eigen::Vector3d(0.0,0.0,0.0);
+		else {
+			double best_height_v  = fabs((best_idx[0] + 0.5) - current_height_v)/Vcnt*2; // 0 ~ 1
+//			cout << "best_height_v: " << best_height_v << endl;
+			double best_heading_h  = (best_idx[1] + 0.5)* Hres; // 0 ~ 2*pi
+			desired_vel(0) = normal(best_height_v,0.8)*cos(best_heading_h)*limit_v_norm; // adjustable: 0.8
+			desired_vel(1) = normal(best_height_v,0.8)*sin(best_heading_h)*limit_v_norm;
+			desired_vel(2) = sign((best_idx[0] + 0.5) - current_height_v) * sqrt(1-pow(normal(best_height_v,0.8),2))*limit_v_norm;
+		}
+
 	} else if (isSpherical){
 		double goal_heading_v = sign(uav2goal(2)) * acos(Eigen::Vector3d(uav2goal(0),uav2goal(1),0.0).norm() / uav2goal.norm()); // -pi/2 ~ pi/2
 		double goal_heading_h = sign(uav2goal(1)) * acos(uav2goal(0) / Eigen::Vector3d(uav2goal(0),uav2goal(1),0.0).norm()); // -pi ~ pi
@@ -280,13 +344,11 @@ int VFH::compute_force(Eigen::Vector3d  &goal, Eigen::Vector3d &desired_vel)
 //				if (angle_err_vel_h>M_PI) angle_err_vel_h = 2*M_PI - angle_err_vel_h; // 0 ~ pi
 				
 				// 角度差的越小越好
-				if ( current_vel.norm()>1e-6)
+				if ( current_vel.norm()>0.1)
 					Histogram_3d[v][h] *= sqrt((cos(angle_err_goal_v)+1)/2*(cos(angle_err_goal_h)+1)/2 + (cos(angle_err_vel_v)+1)/2*(cos(angle_err_vel_h)+1)/2 * pow(current_vel.norm()/limit_v_norm,2));
 				else
 					Histogram_3d[v][h] *= sqrt((cos(angle_err_goal_v)+1)/2*(cos(angle_err_goal_h)+1)/2);
 			}
-
-
 
 		// 寻找最优方向
 		int best_idx[2];
@@ -295,8 +357,15 @@ int VFH::compute_force(Eigen::Vector3d  &goal, Eigen::Vector3d &desired_vel)
 		double best_value = 0;
 		for(int i=0; i<Vcnt; i++)
 			for(int j=0; j<Hcnt; j++){
-				if(Histogram_3d[i][j]>best_value){
-				    best_value = Histogram_3d[i][j];
+				int width_ = 3; // width_extended
+				int half_width_ = (width_-1)/2;
+				double filter[width_*width_];
+				for (int u=0; u<width_; u++)
+					for (int v=0; v<width_; v++)
+						filter[u*width_+v] = Histogram_3d[i+u-half_width_<0 ? -(i+u-half_width_)-1 : (i+u-half_width_>=Vcnt ? 2*Vcnt-1-(i+u-half_width_) : i+u-half_width_)][i+u-half_width_<0 ? (j+v-half_width_<0 ? (j+v-half_width_+Hcnt/2)%Hcnt : (j+v-half_width_>=Hcnt ? (j+v-half_width_-Hcnt/2)%Hcnt : (j+v-half_width_+Hcnt/2)%Hcnt )) : (i+u-half_width_>=Vcnt ? (j+v-half_width_<0 ? (j+v-half_width_+Hcnt/2)%Hcnt : (j+v-half_width_>=Hcnt ? (j+v-half_width_-Hcnt/2)%Hcnt : (j+v-half_width_+Hcnt/2)%Hcnt )) : (j+v-half_width_<0 ? Hcnt+j+v-half_width_ : (j+v-half_width_>=Hcnt ? j+v-half_width_-Hcnt : j+v-half_width_)))];
+				double value_ = average(filter,width_*width_) + minimum(filter,width_*width_);
+				if(value_>best_value){
+				    best_value = value_;
 				    best_idx[0] = i;
 				    best_idx[1] = j;
 				}
@@ -314,12 +383,32 @@ int VFH::compute_force(Eigen::Vector3d  &goal, Eigen::Vector3d &desired_vel)
 	}
 
 
+// weights histogram
+//if (is_2D){
+//	for (int i=0; i<Hcnt; i++)
+//		cout << Histogram_2d[i] << ", ";
+//	cout << "" << endl;
+//	cout << "" << endl;
+//}
+//else{
+//	for (int i=0; i<Vcnt; i++) {
+//		for (int j=0; j<Hcnt; j++) 
+//			cout << Histogram_3d[i][j] << ", ";
+//		cout << "" << endl;
+//	}
+//	cout << "" << endl;
+//}
+
 
     // 如果不安全的点超出指定数量
     if(safe_cnt>5)
         local_planner_state = 2;  //成功规划，但是飞机不安全
     else
         local_planner_state =1;  //成功规划， 安全
+        
+    // 地面排斥
+    if (current_pos[2] <2*ground_height && current_vel(2)<0.0)
+		desired_vel(2) += (1/max(max(ground_height,current_pos[2]) - ground_height, 1e-6) - 1/(ground_height));
 
     exec_num++;
 	end = std::chrono::system_clock::now();
@@ -423,10 +512,46 @@ void VFH::SphericalCoordinateVFH(double hor_angle_cen, double ver_angle_cen, dou
     
 }
 
-// hor_angle_cen: -pi ~ pi; angle_range: 0~pi/2
-void VFH::CylindricalCoordinateVFH(double hor_angle_cen, double angle_range, double val)
+// hor_angle_cen: -pi ~ pi; ver_angle_cen: 0 ~ Vcnt; idx_range: 0~Vcnt/2; hor_obs_dist; val
+void VFH::CylindricalCoordinateVFH(double hor_angle_cen, double ver_angle_cen, double idx_range, double hor_obs_dist, double val)
 {
-     
+	hor_angle_cen = hor_angle_cen<0 ? hor_angle_cen+2*M_PI : hor_angle_cen; // 0 ~ 2pi
+	double ver_idx_min = max(ver_angle_cen - idx_range,0.0);
+	double ver_idx_max = min(ver_angle_cen + idx_range,double(Vcnt));
+
+	double angle_range;
+	for(int i=int(ver_idx_min); i<ver_idx_max; i++){
+		if (i==int(ver_angle_cen)){
+			angle_range = asin(min(inflate_plus_safe_distance/hor_obs_dist,1.0));// alpha/2 < pi/2
+		}else if (i<ver_angle_cen){
+			angle_range = asin(min(sqrt(pow(inflate_plus_safe_distance,2) - pow((ver_angle_cen-(i+1))*Vres,2)) / hor_obs_dist,1.0));// alpha/2 < pi/2
+		}else{
+			angle_range = asin(min(sqrt(pow(inflate_plus_safe_distance,2) - pow((ver_angle_cen-(i))*Vres,2)) / hor_obs_dist,1.0));// alpha/2 < pi/2
+		}			
+
+		double hor_angle_max = hor_angle_cen + angle_range;
+		double hor_angle_min = hor_angle_cen - angle_range; // -pi/2 ~ 5pi/2
+		int hor_cnt_min = int((hor_angle_min<0 ? hor_angle_min+2*M_PI : hor_angle_min>2*M_PI ? hor_angle_min-2*M_PI : hor_angle_min)/Hres);
+		int hor_cnt_max = int((hor_angle_max<0 ? hor_angle_max+2*M_PI : hor_angle_max>2*M_PI ? hor_angle_max-2*M_PI : hor_angle_max)/Hres);
+		    	
+	    if(hor_cnt_min>hor_cnt_max)
+		{
+		    for(int j=hor_cnt_min; j<Hcnt; j++)
+		    {
+		        if (Histogram_3d[i][j] > val) Histogram_3d[i][j] = val;
+		    }
+		    for(int j=0;j<=hor_cnt_max; j++)
+		    {
+		        if (Histogram_3d[i][j] > val) Histogram_3d[i][j] = val;
+		    }
+		}else
+		{
+		    for(int j=hor_cnt_min; j<=hor_cnt_max; j++)
+		    {
+		        if (Histogram_3d[i][j] > val) Histogram_3d[i][j] = val;
+		    }
+		}
+	}
 }
 
 }

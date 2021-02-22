@@ -11,7 +11,8 @@
 	<arg     if="$(arg octomap_ground_filter_out)" name="octomap_ground_removal"  default="false"/>
 	<arg unless="$(arg octomap_ground_filter_out)" name="octomap_ground_removal"  default="true"/>
 	<arg name="depth_mode" default="true"/><!-- rtabmap 双目、深度信息需要开启 realsense_plugin; 深度信息也可以开启 openni_kinect; octomap 点云信息可以开通 openni_kinect 或 depth_camera -->
-
+	<arg name="type_in_goal" default="false"/>
+	
 	<arg name="world" default="$(find prometheus_gazebo)/worlds/obstacle.world"/>
 	<arg name="sdf" default="$(find prometheus_gazebo)/amov_models/amov_solo_D435i/amov_solo_D435i.sdf"/>
 	<arg name="pcd_file" value="$(find prometheus_gazebo)/maps/obstacle.pcd" />
@@ -68,11 +69,11 @@
 			<param name="local_planner/sim_mode" value="true" type="bool"/>
 			<param name="local_planner/planner_enable" value="true" type="bool"/>
 			<!-- 二维平面规划 -->
-			<param name="local_planner/is_2D" value="false" type="bool"/>
-			<param name="vfh/isCylindrical" value="false" type="bool"/>
-			<param name="vfh/isSpherical" value="true" type="bool"/>
-			<param name="local_planner/is_rgbd" value="true" type="bool"/>
-			<param name="local_planner/control_yaw_flag" value="true" type="bool"/>
+			<param name="local_planner/is_2D" value="false" type="bool"/> <!-- 2D规划，并采用2D直方图？ -->
+			<param name="local_planner/fly_height_2D" value="1.0" type="double"/> <!-- 如果是2D的话，则需要 -->
+			<param name="vfh/isCylindrical" value="false" type="bool"/> <!-- 如果3D，采用圆柱面直方图？ -->
+			<param name="vfh/isSpherical" value="true" type="bool"/> <!-- 如果3D，采用球面直方图？ -->
+			<param name="local_planner/control_yaw_flag" value="true" type="bool"/> <!-- 自旋以感知地图 -->
 			<!-- 选择算法 0代表APF,1代表VFH -->
 			<param name="local_planner/algorithm_mode" value="1" type="int"/>
 			<!-- 0代表建图数据类型octomap<sensor_msgs::PointCloud2>,1代表2d传感器数据类型<sensor_msgs::LaserScan>,2代表3d传感器数据类型<sensor_msgs::PointCloud2> -->
@@ -86,7 +87,7 @@
 			<!-- weight -->
 <!--			<param name="vfh/obstacle_weight" value="10.0" type="double"/>-->
 <!--			<param name="vfh/goalWeight" value="0.1" type="double"/>-->
-			<<param name="vfh/h_cnt" value="60" type="double"/>
+			<param name="vfh/h_cnt" value="60" type="double"/>
 			<param name="vfh/v_cnt" value="10" type="double"/>
 			<!-- 停止距离，小于该距离，停止自动飞行 -->
 			<param name="local_planner/safe_distance" value="0.01" type="double"/>
@@ -139,11 +140,12 @@
 			<param name="local_planner/sim_mode" value="true" type="bool"/>
 			<param name="local_planner/planner_enable" value="true" type="bool"/>
 			<!-- 二维平面规划 -->
-			<param name="local_planner/is_2D" value="false" type="bool"/>
-			<param name="vfh/isCylindrical" value="false" type="bool"/>
-			<param name="vfh/isSpherical" value="true" type="bool"/>
-			<param name="local_planner/is_rgbd" value="true" type="bool"/>
-			<param name="local_planner/control_yaw_flag" value="true" type="bool"/>
+			<param name="local_planner/is_2D" value="false" type="bool"/> <!-- 2D规划，并采用2D直方图？ -->
+			<param name="local_planner/fly_height_2D" value="1.0" type="double"/> <!-- 如果是2D的话，则需要 -->
+			<param name="vfh/isCylindrical" value="false" type="bool"/> <!-- 如果3D，采用圆柱面直方图？ -->
+			<param name="vfh/isSpherical" value="true" type="bool"/> <!-- 如果3D，采用球面直方图？ -->
+			<param name="local_planner/is_rgbd" value="true" type="bool"/> <!--如果map_input设定为传感器原始数据输入，那么激活rgbd数据处理 -->
+			<param name="local_planner/control_yaw_flag" value="true" type="bool"/> <!-- 自旋以感知地图 -->
 			<!-- 选择算法 0代表APF,1代表VFH -->
 			<param name="local_planner/algorithm_mode" value="1" type="int"/>
 			<!-- 0代表建图数据类型octomap<sensor_msgs::PointCloud2>,1代表2d传感器数据类型<sensor_msgs::LaserScan>,2代表3d传感器数据类型<sensor_msgs::PointCloud2> -->
@@ -168,6 +170,10 @@
 			<param name="local_planner/safe_distance" value="0.01" type="double"/>
 		</node>	
 	</group>
+
+	<!-- run the pub_goal.cpp -->
+	<node if="$(arg type_in_goal)" pkg="prometheus_mission" type="pub_goal" name="pub_goal" output="screen" launch-prefix="gnome-terminal --tab --">	
+	</node> 
 
 	<!-- 启动rviz,设为false可关闭 -->
 	<group if="$(arg visualization)">
