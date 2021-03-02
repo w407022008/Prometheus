@@ -20,6 +20,7 @@
 #include <pcl/conversions.h>
 #include <pcl/filters/passthrough.h>
 #include <pcl/filters/voxel_grid.h>
+#include <pcl/filters/radius_outlier_removal.h>
 
 #include <pcl_ros/transforms.h>
 #include <pcl_ros/point_cloud.h>
@@ -61,11 +62,10 @@ private:
     bool is_2D, is_rgbd, is_lidar;
     bool control_yaw_flag;
     double max_planning_vel;
+    double sensor_max_range;
     double inflate_distance;
     double fly_height_2D;
     double safe_distance;
-    bool sim_mode;
-    bool map_groundtruth;
 
     // 订阅无人机状态、目标点、传感器数据（生成地图）
     ros::Subscriber goal_sub;
@@ -91,14 +91,15 @@ private:
     double distance_to_goal;
 
     // 规划器状态
+    bool sim_mode;
     bool odom_ready;
     bool drone_ready;
     bool sensor_ready;
     bool goal_ready; 
-    bool is_safety;
     bool path_ok;
     bool planner_enable_default;
     bool planner_enable;
+    bool vfh_guide_point;
 
     // 规划初始状态及终端状态
     Eigen::Vector3d start_pos, start_vel, start_acc, goal_pos, goal_vel;

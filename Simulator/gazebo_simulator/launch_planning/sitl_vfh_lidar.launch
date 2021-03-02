@@ -8,7 +8,7 @@
 	<arg name="visualization" default="true"/>
 	<arg name="pcd_file" value="$(find prometheus_gazebo)/maps/obstacle.pcd" />
 	<arg name="model" default="amov_solo"/>
-	<arg name="is_2DLidar" default="true"/>
+	<arg name="is_2DLidar" default="false"/>
 	<arg name="octomap_denied" default="true"/>
 	<arg name="octomap_ground_filter_out" default="false"/>
 	<arg     if="$(arg octomap_ground_filter_out)" name="octomap_ground_removal"  default="false"/>
@@ -74,30 +74,29 @@
 			<!-- 0代表建图数据类型octomap<sensor_msgs::PointCloud2>,1代表2d传感器数据类型<sensor_msgs::LaserScan>,2代表3d传感器数据类型<sensor_msgs::PointCloud2> -->
 			-<param if="$(arg octomap_denied)" name="local_planner/map_input" value="1" type="int"/>
 			<param unless="$(arg octomap_denied)" name="local_planner/map_input" value="0" type="int"/>
-			<param name="local_planner/ground_removal" value="false" type="bool"/>
+			<param name="local_planner/ground_removal" value="true" type="bool"/>
 			<param name="local_planner/max_ground_height" value="0.5" type="double"/>
-			<param name="local_planner/downsampling" value="false" type="bool"/>
-			<param name="local_planner/resolution" value="0.1" type="double"/>
-			<!-- 飞行高度 -->
+			<param name="local_planner/ceil_height" value="4.0" type="double"/>
+			<param name="local_planner/downsampling" value="true" type="bool"/>
+			<param name="local_planner/resolution" value="0.2" type="double"/>
+			<!-- 2D规划？否则，什么直方图？ -->
 			<param name="local_planner/is_2D" value="false" type="bool"/> <!-- 2D规划，并采用2D直方图？ -->
 			<param name="local_planner/fly_height_2D" value="1.0" type="double"/> <!-- 如果是2D的话，则需要 -->
-			<param name="vfh/isCylindrical" value="true" type="bool"/> <!-- 如果3D，采用圆柱面直方图？ -->
-			<param name="vfh/isSpherical" value="false" type="bool"/> <!-- 如果3D，采用球面直方图？ -->
+			<param name="vfh/isCylindrical" value="false" type="bool"/> <!-- 如果3D，采用圆柱面直方图？ -->
+			<param name="vfh/isSpherical" value="true" type="bool"/> <!-- 如果3D，采用球面直方图？ -->
 			<param name="local_planner/is_lidar" value="$(arg octomap_denied)" type="bool"/> <!--如果map_input设定为传感器原始数据输入，那么激活lidar数据处理 -->
 			<param name="local_planner/control_yaw_flag" value="true" type="bool"/> <!-- 如果使用 2dLidar 就需要自旋以感知地图 -->
 			<!-- 最大速度，设的越小越安全 -->
-			<param name="local_planner/max_planning_vel" value="0.5" type="double"/>
+			<param name="local_planner/max_planning_vel" value="1.0" type="double"/>
 			<!-- 膨胀参数，一般设置为无人机的半径或更大 -->
-			<param name="local_planner/inflate_distance" value="0.8" type="double"/>
+			<param name="local_planner/inflate_distance" value="0.3" type="double"/>
 			<!-- 感知距离，只考虑感知距离内的障碍物 -->
-			<param name="local_planner/sensor_max_range" value="4.0" type="double"/>    
-			<!-- weight -->
-<!--			<param name="vfh/obstacle_weight" value="10.0" type="double"/>-->
-<!--			<param name="vfh/goalWeight" value="0.1" type="double"/>-->
+			<param name="local_planner/sensor_max_range" value="4.0" type="double"/>
+			<!-- 安全距离 -->
+			<param name="local_planner/safe_distance" value="0.01" type="double"/>  
+			<!-- 直方图分辨率 -->
 			<param name="vfh/h_cnt" value="60" type="double"/>
-			<param name="vfh/v_cnt" value="10" type="double"/>
-			<!-- 停止距离，小于该距离，停止自动飞行 -->
-			<param name="local_planner/safe_distance" value="0.01" type="double"/>
+			<param name="vfh/v_cnt" value="30" type="double"/>
 		</node>	
 	</group>
 	
@@ -159,10 +158,11 @@
 			-<param if="$(arg octomap_denied)" name="local_planner/map_input" value="2" type="int"/>
 			<param unless="$(arg octomap_denied)" name="local_planner/map_input" value="0" type="int"/>
 			<param name="local_planner/ground_removal" value="true" type="bool"/>
-			<param name="local_planner/max_ground_height" value="0.3" type="double"/>
+			<param name="local_planner/max_ground_height" value="0.5" type="double"/>
+			<param name="local_planner/ceil_height" value="4.0" type="double"/>
 			<param name="local_planner/downsampling" value="true" type="bool"/>
 			<param name="local_planner/resolution" value="0.2" type="double"/>
-			<!-- 飞行高度 -->
+			<!-- 2D规划？否则，什么直方图？ -->
 			<param name="local_planner/is_2D" value="false" type="bool"/> <!-- 2D规划，并采用2D直方图？ -->
 			<param name="local_planner/fly_height_2D" value="1.0" type="double"/> <!-- 如果是2D的话，则需要 -->
 			<param name="vfh/isCylindrical" value="false" type="bool"/> <!-- 如果3D，采用圆柱面直方图？ -->
@@ -171,16 +171,14 @@
 			<!-- 最大速度，设的越小越安全 -->
 			<param name="local_planner/max_planning_vel" value="1.0" type="double"/>
 			<!-- 膨胀参数，一般设置为无人机的半径或更大 -->
-			<param name="local_planner/inflate_distance" value="0.8" type="double"/>
+			<param name="local_planner/inflate_distance" value="0.3" type="double"/>
 			<!-- 感知距离，只考虑感知距离内的障碍物 -->
-			<param name="local_planner/sensor_max_range" value="4.0" type="double"/>    
-			<!-- weight -->
-<!--			<param name="vfh/obstacle_weight" value="10.0" type="double"/>-->
-<!--			<param name="vfh/goalWeight" value="0.1" type="double"/>-->
+			<param name="local_planner/sensor_max_range" value="4.0" type="double"/>
+			<!-- 安全距离 -->
+			<param name="local_planner/safe_distance" value="0.01" type="double"/>  
+			<!-- 直方图分辨率 -->
 			<param name="vfh/h_cnt" value="60" type="double"/>
-			<param name="vfh/v_cnt" value="10" type="double"/>
-			<!-- 停止距离，小于该距离，停止自动飞行 -->
-			<param name="local_planner/safe_distance" value="0.01" type="double"/>
+			<param name="vfh/v_cnt" value="30" type="double"/>
 		</node>	
 	</group>
 

@@ -1,6 +1,7 @@
 #include "local_planning.h"
 #include <string> 	
 #include <time.h>
+#include "chrono" 
 
 namespace Local_Planning
 {
@@ -8,19 +9,29 @@ namespace Local_Planning
 // 局部规划算法 初始化函数
 void Local_Planner::init(ros::NodeHandle& nh)
 {
-    // 参数读取
-    nh.param("local_planner/inflate_distance", inflate_distance, 0.20);  // 最小障碍物距离
-    // 规划器使能
-    nh.param("local_planner/planner_enable", planner_enable_default, false);
-    // 根据参数 planning/algorithm_mode 选择局部避障算法: [0]: APF,[1]: VFH
+    // 是否为仿真模式
+    nh.param("local_planner/sim_mode", sim_mode, false); 
+    // 局部避障算法: [0]: APF,[1]: VFH
     nh.param("local_planner/algorithm_mode", algorithm_mode, 0);
-	// 0代表建图数据类型octomap<sensor_msgs::PointCloud2>,1代表2d传感器数据类型<sensor_msgs::LaserScan>,2代表3d传感器数据类型<sensor_msgs::PointCloud2>
+    // 是否生成指导点
+    if(algorithm_mode)
+    	nh.param("local_planner/vfh_guide_point", vfh_guide_point, false);
+	else
+		vfh_guide_point = false;
+    // 规划器使能
+    if(vfh_guide_point)
+    	planner_enable_default = false;
+    else
+    	nh.param("local_planner/planner_enable", planner_enable_default, false);
+    	
+	// 环境输入类型：0: octomap点云数据类型<sensor_msgs::PointCloud2>, 1: 2d传感器数据类型<sensor_msgs::LaserScan>, 2: 3d传感器数据类型<sensor_msgs::PointCloud2>
     nh.param("local_planner/map_input", map_input, 0);
     nh.param("local_planner/ground_removal", flag_pcl_ground_removal, false);
     nh.param("local_planner/max_ground_height", max_ground_height, 0.1);
     nh.param("local_planner/downsampling", flag_pcl_downsampling, false);
     nh.param("local_planner/resolution", size_of_voxel_grid, 0.1);
-    nh.param("local_planner/timeSteps_fusingSamples", timeSteps_fusingSamples, 4);
+    nh.param("local_planner/timeSteps_fusingSamples", timeSteps_fusingSamples, 5);
+    
     // TRUE代表2D平面规划及搜索,FALSE代表3D 
     nh.param("local_planner/is_2D", is_2D, false); 
     // 如果采用2维Lidar，需要一定的yawRate来探测地图
@@ -31,10 +42,13 @@ void Local_Planner::init(ros::NodeHandle& nh)
     nh.param("local_planner/is_rgbd", is_rgbd, false); 
     nh.param("local_planner/is_lidar", is_lidar, false); 
     
-    // 是否为仿真模式
-    nh.param("local_planner/sim_mode", sim_mode, false); 
+    // 最小障碍物距离
+    nh.param("local_planner/inflate_distance", inflate_distance, 0.20);
+    // 探测最大距离
+    nh.param("local_planner/sensor_max_range", sensor_max_range, 3.0);
     // 最大速度
     nh.param("local_planner/max_planning_vel", max_planning_vel, 0.4);
+    
 
     // 订阅目标点
     goal_sub = nh.subscribe<geometry_msgs::PoseStamped>("/prometheus/planning/goal", 1, &Local_Planner::goal_cb, this);
@@ -265,6 +279,9 @@ void Local_Planner::Callback_2dlaserscan(const sensor_msgs::LaserScanConstPtr &m
         return;
     }
     
+	std::chrono::time_point<std::chrono::system_clock> start, end; 
+    start = std::chrono::system_clock::now(); 
+    
 	tf::StampedTransform transform;
 	try{
 		tfListener.waitForTransform("/map","/lidar_link",msg->header.stamp,ros::Duration(4.0));
@@ -307,37 +324,89 @@ void Local_Planner::Callback_2dlaserscan(const sensor_msgs::LaserScanConstPtr &m
         
         _pointcloud.push_back(newPoint);
     }
-	concatenate_PointCloud += _pointcloud;
-	
-	static int frame_id = 0;
-	if (frame_id == timeSteps_fusingSamples){
-//		cout << "point cloud size: " << ", " << (int)concatenate_PointCloud.points.size();
-		if(flag_pcl_ground_removal){
-			
-			pcl::PassThrough<pcl::PointXYZ> ground_removal;
-			ground_removal.setInputCloud (concatenate_PointCloud.makeShared());
-			ground_removal.setFilterFieldName ("z");
-			ground_removal.setFilterLimits (-1.0, max_ground_height);
-			ground_removal.setFilterLimitsNegative (true);
-			ground_removal.filter (concatenate_PointCloud);
-		}
-		
-		if (flag_pcl_downsampling){
-			pcl::VoxelGrid<pcl::PointXYZ> sor;
-			sor.setInputCloud(concatenate_PointCloud.makeShared());
-			sor.setLeafSize(size_of_voxel_grid, size_of_voxel_grid, size_of_voxel_grid);
-			sor.filter(concatenate_PointCloud);
-		}
-//		cout << " to " << (int)concatenate_PointCloud.points.size() << endl;
-		
-		local_point_cloud = concatenate_PointCloud;
-		frame_id = 0;
-		concatenate_PointCloud.clear();
-	} else {
-		local_point_cloud = local_point_cloud;
-		frame_id++;
-	}
+    
+//	concatenate_PointCloud += _pointcloud;
+//	static int frame_id = 0;
+//	if (frame_id == timeSteps_fusingSamples){
+////		cout << "point cloud size: " << ", " << (int)concatenate_PointCloud.points.size();
+//		if(flag_pcl_ground_removal){
+//			pcl::PassThrough<pcl::PointXYZ> ground_removal;
+//			ground_removal.setInputCloud (concatenate_PointCloud.makeShared());
+//			ground_removal.setFilterFieldName ("z");
+//			ground_removal.setFilterLimits (-1.0, max_ground_height);
+//			ground_removal.setFilterLimitsNegative (true);
+//			ground_removal.filter (concatenate_PointCloud);
+//		}
+//		
+//		if (flag_pcl_downsampling){
+//			pcl::VoxelGrid<pcl::PointXYZ> sor;
+//			sor.setInputCloud(concatenate_PointCloud.makeShared());
+//			sor.setLeafSize(size_of_voxel_grid, size_of_voxel_grid, size_of_voxel_grid);
+//			sor.filter(concatenate_PointCloud);
+//		}
+////		cout << " to " << (int)concatenate_PointCloud.points.size() << endl;
+//		
+//		local_point_cloud = concatenate_PointCloud;
+//		frame_id = 0;
+//		concatenate_PointCloud.clear();
+//	} else {
+//		local_point_cloud = local_point_cloud;
+//		frame_id++;
+//	}
 
+	if(flag_pcl_ground_removal){
+		pcl::PassThrough<pcl::PointXYZ> ground_removal;
+		ground_removal.setInputCloud (_pointcloud.makeShared());
+		ground_removal.setFilterFieldName ("z");
+		ground_removal.setFilterLimits (-1.0, max_ground_height);
+		ground_removal.setFilterLimitsNegative (true);
+		ground_removal.filter (_pointcloud);
+	}
+	if (flag_pcl_downsampling){
+		static int frame_id = 0;
+		frame_id++;
+		pcl::VoxelGrid<pcl::PointXYZ> sor;
+		sor.setInputCloud(_pointcloud.makeShared());
+		sor.setLeafSize(size_of_voxel_grid, size_of_voxel_grid, size_of_voxel_grid);
+		sor.filter(_pointcloud);
+		
+		concatenate_PointCloud += _pointcloud;
+		
+		if(frame_id % timeSteps_fusingSamples == 0){
+			static int max_point_num = 1000;
+			if(concatenate_PointCloud.points.size()>max_point_num){
+//				cout << "point cloud size: " << (int)concatenate_PointCloud.points.size();
+				sor.setInputCloud(concatenate_PointCloud.makeShared());
+				sor.setLeafSize(size_of_voxel_grid, size_of_voxel_grid, size_of_voxel_grid);
+				sor.filter(concatenate_PointCloud);
+				max_point_num = (int(concatenate_PointCloud.points.size()/1000) + 1)*1000;
+//				cout << " to " << (int)concatenate_PointCloud.points.size() << " max_point_num " << max_point_num << endl;
+			}
+				
+			if(frame_id % (5*timeSteps_fusingSamples) == 0){
+//				cout << "outlier removal: " << (int)concatenate_PointCloud.points.size();
+				pcl::RadiusOutlierRemoval<pcl::PointXYZ> radiusoutlier;
+				radiusoutlier.setInputCloud(concatenate_PointCloud.makeShared());
+				radiusoutlier.setRadiusSearch(2*size_of_voxel_grid);
+				radiusoutlier.setMinNeighborsInRadius(10);
+				radiusoutlier.filter(concatenate_PointCloud); 
+//				cout << " to " << (int)concatenate_PointCloud.points.size() << endl;
+			}
+		}
+	}else
+		concatenate_PointCloud += _pointcloud;
+	
+	pcl::PassThrough<pcl::PointXYZ> sensor_range;
+	sensor_range.setInputCloud (concatenate_PointCloud.makeShared());
+	sensor_range.setFilterFieldName ("x");
+	sensor_range.setFilterLimits (Origin.getX()-sensor_max_range, Origin.getX()+sensor_max_range);
+	sensor_range.filter (local_point_cloud);
+	sensor_range.setInputCloud (local_point_cloud.makeShared());
+	sensor_range.setFilterFieldName ("y");
+	sensor_range.setFilterLimits (Origin.getY()-sensor_max_range, Origin.getY()+sensor_max_range);
+	sensor_range.filter (local_point_cloud);
+	
+	
 	local_point_cloud.header.seq++;
 	local_point_cloud.header.stamp = (msg->header.stamp).toNSec()/1e3;
 	local_point_cloud.header.frame_id = "/map";
@@ -347,7 +416,15 @@ void Local_Planner::Callback_2dlaserscan(const sensor_msgs::LaserScanConstPtr &m
     local_alg_ptr->set_local_map_pcl(pcl_ptr);
     
     sensor_ready = true;
-
+    static int exec_num = 0;
+    exec_num++;
+	end = std::chrono::system_clock::now();
+    if(exec_num == 10)
+    {
+    	std::chrono::duration<double> elapsed_seconds = end - start; 
+        printf("point_cloud processing takes %f [us].\n", elapsed_seconds.count()/10*1e6);
+        exec_num=0;
+    }
 }
 
 void Local_Planner::Callback_3dpointcloud(const sensor_msgs::PointCloud2ConstPtr &msg)
@@ -358,7 +435,10 @@ void Local_Planner::Callback_3dpointcloud(const sensor_msgs::PointCloud2ConstPtr
 //    	cout << "has odom? is_rgbd or is_lidar?" << endl;
         return;
     }
-
+    
+	std::chrono::time_point<std::chrono::system_clock> start, end; 
+    start = std::chrono::system_clock::now(); 
+    
 	tf::StampedTransform transform;
 	if (is_rgbd)
 		try{
@@ -383,6 +463,7 @@ void Local_Planner::Callback_3dpointcloud(const sensor_msgs::PointCloud2ConstPtr
 
 	tf::Quaternion q = transform.getRotation();
 	tf::Matrix3x3 Rotation(q);
+	tf::Vector3 Origin = tf::Vector3(transform.getOrigin().getX(),transform.getOrigin().getY(),transform.getOrigin().getZ());
 
 	pcl::fromROSMsg(*msg, latest_local_pcl_);
 	
@@ -398,48 +479,99 @@ void Local_Planner::Callback_3dpointcloud(const sensor_msgs::PointCloud2ConstPtr
         _laser_point_body_body_frame[1] = latest_local_pcl_.points[i].y;
         _laser_point_body_body_frame[2] = latest_local_pcl_.points[i].z;
         _laser_point_body_ENU_frame = Rotation * _laser_point_body_body_frame;
-        newPoint.x = transform.getOrigin().getX() + _laser_point_body_ENU_frame[0];
-        newPoint.y = transform.getOrigin().getY() + _laser_point_body_ENU_frame[1];
-        newPoint.z = transform.getOrigin().getZ() + _laser_point_body_ENU_frame[2];
+        newPoint.x = Origin.getX() + _laser_point_body_ENU_frame[0];
+        newPoint.y = Origin.getY() + _laser_point_body_ENU_frame[1];
+        newPoint.z = Origin.getZ() + _laser_point_body_ENU_frame[2];
         
         _pointcloud.push_back(newPoint);
     }
-	concatenate_PointCloud += _pointcloud;
-	
-	static int frame_id = 0;
-	if (frame_id == timeSteps_fusingSamples){
-		if(flag_pcl_ground_removal){
-			
-			pcl::PassThrough<pcl::PointXYZ> ground_removal;
-			ground_removal.setInputCloud (concatenate_PointCloud.makeShared());
-			ground_removal.setFilterFieldName ("z");
-			ground_removal.setFilterLimits (-1.0, max_ground_height);
-			ground_removal.setFilterLimitsNegative (true);
-			ground_removal.filter (concatenate_PointCloud);
-		}
-		
-		if (flag_pcl_downsampling){
-			pcl::VoxelGrid<pcl::PointXYZ> sor;
-			sor.setInputCloud(concatenate_PointCloud.makeShared());
-			sor.setLeafSize(size_of_voxel_grid, size_of_voxel_grid, size_of_voxel_grid);
-			sor.filter(concatenate_PointCloud);
-		}
-		
-		local_pcl_tm1 = concatenate_PointCloud;
-		frame_id = 0;
-		concatenate_PointCloud.clear();
-		
-		local_point_cloud = local_pcl_tm1;
-		local_point_cloud += local_pcl_tm2;
-		local_point_cloud += local_pcl_tm3;
-		local_pcl_tm3 = local_pcl_tm2;
-		local_pcl_tm2 = local_pcl_tm1;
-		local_pcl_tm1.clear();
-	} else {
-		local_point_cloud = local_point_cloud;
-		frame_id++;
-	}
+    
+//	concatenate_PointCloud += _pointcloud;
+//	static int frame_id = 0;
+//	if (frame_id == timeSteps_fusingSamples){
+//		if(flag_pcl_ground_removal){
+//			pcl::PassThrough<pcl::PointXYZ> ground_removal;
+//			ground_removal.setInputCloud (concatenate_PointCloud.makeShared());
+//			ground_removal.setFilterFieldName ("z");
+//			ground_removal.setFilterLimits (-1.0, max_ground_height);
+//			ground_removal.setFilterLimitsNegative (true);
+//			ground_removal.filter (concatenate_PointCloud);
+//		}
+//		
+//		if (flag_pcl_downsampling){
+//			pcl::VoxelGrid<pcl::PointXYZ> sor;
+//			sor.setInputCloud(concatenate_PointCloud.makeShared());
+//			sor.setLeafSize(size_of_voxel_grid, size_of_voxel_grid, size_of_voxel_grid);
+//			sor.filter(concatenate_PointCloud);
+//		}
+//		
+//		local_pcl_tm1 = concatenate_PointCloud;
+//		frame_id = 0;
+//		concatenate_PointCloud.clear();
+//		
+//		local_point_cloud = local_pcl_tm1;
+//		local_point_cloud += local_pcl_tm2;
+//		local_point_cloud += local_pcl_tm3;
+//		local_pcl_tm3 = local_pcl_tm2;
+//		local_pcl_tm2 = local_pcl_tm1;
+//		local_pcl_tm1.clear();
+//	} else {
+//		local_point_cloud = local_point_cloud;
+//		frame_id++;
+//	}
 
+	if(flag_pcl_ground_removal){
+		pcl::PassThrough<pcl::PointXYZ> ground_removal;
+		ground_removal.setInputCloud (_pointcloud.makeShared());
+		ground_removal.setFilterFieldName ("z");
+		ground_removal.setFilterLimits (-1.0, max_ground_height);
+		ground_removal.setFilterLimitsNegative (true);
+		ground_removal.filter (_pointcloud);
+	}
+	if (flag_pcl_downsampling){
+		static int frame_id = 0;
+		frame_id++;
+		pcl::VoxelGrid<pcl::PointXYZ> sor;
+		sor.setInputCloud(_pointcloud.makeShared());
+		sor.setLeafSize(size_of_voxel_grid, size_of_voxel_grid, size_of_voxel_grid);
+		sor.filter(_pointcloud);
+		
+		concatenate_PointCloud += _pointcloud;
+		
+		if(frame_id % timeSteps_fusingSamples == 0){
+			static int max_point_num = 1000;
+			if(concatenate_PointCloud.points.size()>max_point_num){
+//				cout << "downsampling: " << (int)concatenate_PointCloud.points.size();
+				sor.setInputCloud(concatenate_PointCloud.makeShared());
+				sor.setLeafSize(size_of_voxel_grid, size_of_voxel_grid, size_of_voxel_grid);
+				sor.filter(concatenate_PointCloud);
+				max_point_num = (int(concatenate_PointCloud.points.size()/1000) + 1)*1000;
+//				cout << " to " << (int)concatenate_PointCloud.points.size() << " max_point_num " << max_point_num << endl;
+			}
+				
+			if(frame_id % (5*timeSteps_fusingSamples) == 0){
+//				cout << "outlier removal: " << (int)concatenate_PointCloud.points.size();
+				pcl::RadiusOutlierRemoval<pcl::PointXYZ> radiusoutlier;
+				radiusoutlier.setInputCloud(concatenate_PointCloud.makeShared());
+				radiusoutlier.setRadiusSearch(2*size_of_voxel_grid);
+				radiusoutlier.setMinNeighborsInRadius(10);
+				radiusoutlier.filter(concatenate_PointCloud); 
+//				cout << " to " << (int)concatenate_PointCloud.points.size() << endl;
+			}
+		}
+	}else
+		concatenate_PointCloud += _pointcloud;
+	
+	pcl::PassThrough<pcl::PointXYZ> sensor_range;
+	sensor_range.setInputCloud (concatenate_PointCloud.makeShared());
+	sensor_range.setFilterFieldName ("x");
+	sensor_range.setFilterLimits (Origin.getX()-sensor_max_range, Origin.getX()+sensor_max_range);
+	sensor_range.filter (local_point_cloud);
+	sensor_range.setInputCloud (local_point_cloud.makeShared());
+	sensor_range.setFilterFieldName ("y");
+	sensor_range.setFilterLimits (Origin.getY()-sensor_max_range, Origin.getY()+sensor_max_range);
+	sensor_range.filter (local_point_cloud);
+	
 	
 	local_point_cloud.header = latest_local_pcl_.header;
 	local_point_cloud.header.frame_id = "/map";
@@ -452,7 +584,7 @@ void Local_Planner::Callback_3dpointcloud(const sensor_msgs::PointCloud2ConstPtr
 //	cout << "[ [" << Rotation[0][0] << ", " << Rotation[0][1] << ", " << Rotation[0][2] << "]," << endl;
 //	cout << "  [" << Rotation[1][0] << ", " << Rotation[1][1] << ", " << Rotation[1][2] << "]," << endl;
 //	cout << "  [" << Rotation[2][0] << ", " << Rotation[2][1] << ", " << Rotation[2][2] << "] ]" << endl;
-	cout << "local obstacle points size: " << (int)local_point_cloud.points.size() << endl;
+//	cout << "local obstacle points size: " << (int)local_point_cloud.points.size() << endl;
 //	cout << "header.seq: " << (int)local_point_cloud.header.seq << endl;
 //	cout << "header.stamp: " << (int)local_point_cloud.header.stamp << endl;
 //	cout << "header.frame_id: " << local_point_cloud.header.frame_id << endl;
@@ -463,7 +595,15 @@ void Local_Planner::Callback_3dpointcloud(const sensor_msgs::PointCloud2ConstPtr
     local_alg_ptr->set_local_map_pcl(pcl_ptr);
     
     sensor_ready = true;
-
+    static int exec_num = 0;
+    exec_num++;
+	end = std::chrono::system_clock::now();
+    if(exec_num == 10)
+    {
+    	std::chrono::duration<double> elapsed_seconds = end - start; 
+        printf("point_cloud processing takes %f [us].\n", elapsed_seconds.count()/10*1e6);
+        exec_num=0;
+    }
 }
 
 void Local_Planner::localcloudCallback(const sensor_msgs::PointCloud2ConstPtr &msg)

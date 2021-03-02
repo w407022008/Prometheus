@@ -46,7 +46,7 @@ private:
     double obs_angle;
     Eigen::Vector3d repulsive_force;
     Eigen::Vector3d attractive_force;
-    Eigen::Vector3d guid_force;
+    Eigen::Vector3d guide_force;
 
     pcl::PointCloud<pcl::PointXYZ> latest_local_pcl_;
     sensor_msgs::PointCloud2ConstPtr  local_map_ptr_;

@@ -123,12 +123,12 @@
 			<!-- 膨胀参数，一般设置为无人机的半径或更大 -->
 			<param name="local_planner/inflate_distance" value="0.8" type="double"/>
 			<!-- 感知距离，只考虑感知距离内的障碍物 -->
-			<param name="local_planner/sensor_max_range" value="3.0" type="double"/>  
+			<param name="local_planner/sensor_max_range" value="4.0" type="double"/>  
 			<!-- 增益 -->
 			<param name="apf/k_push" value="2.0" type="double"/>
 			<param name="apf/k_att" value="1.0" type="double"/>
 			<!-- 最大吸引距离 -->
-			<param name="apf/max_att_dist" value="3" type="double"/>
+			<param name="apf/max_att_dist" value="1.0" type="double"/>
 			<!-- 地面高度，不考虑低于地面高度的障碍物 -->
 			<param name="local_planner/ground_height" value="0.3" type="double"/>
 			<!-- 地面安全高度，小于该高度，会产生向上推力 -->

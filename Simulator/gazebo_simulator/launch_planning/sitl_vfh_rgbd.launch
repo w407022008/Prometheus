@@ -6,7 +6,7 @@
 	<arg name="gazebo_gui" default="false"/>
 	<arg name="visualization" default="true"/>
 	<arg name="setup_rtabmap" default="false" />  <!-- rtabmap 启动特别慢 -->
-	<arg name="mapper_enable" default="false" />  <!-- true: 使用建图数据; false: 使用传感器原始数据 -->
+	<arg name="mapper_enable" default="true" />  <!-- true: 使用建图数据; false: 使用传感器原始数据 -->
 	<arg name="octomap_ground_filter_out" default="false"/>
 	<arg     if="$(arg octomap_ground_filter_out)" name="octomap_ground_removal"  default="false"/>
 	<arg unless="$(arg octomap_ground_filter_out)" name="octomap_ground_removal"  default="true"/>

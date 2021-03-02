@@ -99,9 +99,9 @@ int APF::compute_force(Eigen::Vector3d &goal, Eigen::Vector3d &desired_vel)
     // 排斥力
     double uav_height = cur_odom_.pose.pose.position.z;
     repulsive_force = Eigen::Vector3d(0.0, 0.0, 0.0);
-    guid_force = Eigen::Vector3d(0.0, 0.0, 0.0);
+    guide_force = Eigen::Vector3d(0.0, 0.0, 0.0);
     int count;
-    double max_guid_force = 0.0;
+    double max_guide_force = 0.0;
 
     Eigen::Vector3d p3d;
     vector<Eigen::Vector3d> obstacles;
@@ -127,7 +127,7 @@ int APF::compute_force(Eigen::Vector3d &goal, Eigen::Vector3d &desired_vel)
 
 		
     	obs_angle = acos(uav2obs.dot(current_vel) / uav2obs.norm() / current_vel_norm);
-        if(isnan(dist_push) || (dist_push > min(3*inflate_distance,sensor_max_range/2) && obs_angle > M_PI/6)){
+        if(isnan(dist_push) || (dist_push > min(3*inflate_distance,sensor_max_range) && obs_angle > M_PI/6)){
         	continue;            
 		}
 		
@@ -145,23 +145,19 @@ int APF::compute_force(Eigen::Vector3d &goal, Eigen::Vector3d &desired_vel)
                 desired_vel /= safe_cnt;
                 return 2;  //成功规划，但是飞机不安全
             }
-        }
-
-        obstacles.push_back(p3d);
-        double push_gain = k_push * (1/(max(inflate_distance,dist_push) - inflate_distance + 1e-6) - 1/(sensor_max_range-inflate_distance));
-
-        if(dist_att<1.0)
-        {
-            push_gain *= pow(dist_att,2);  // to gaurantee to reach the goal.
-        }
-
-		if(dist_push < min(3*inflate_distance,sensor_max_range/2)){
+        }else if(dist_push < 3*inflate_distance){
+		    double push_gain = k_push * (1/(dist_push - inflate_distance) - 1/(2*inflate_distance));
             repulsive_force += push_gain * (-uav2obs)/dist_push;
 			count ++;
 		}
-		if (obs_angle < M_PI/6)
-			guid_force += current_vel.cross((-uav2obs).cross(current_vel)) / pow(current_vel_norm,2) / dist_push * 1/max(dist_push*sin(obs_angle), 0.05); // or / pow(dist_push,2)
-			if (max_guid_force<min(3,1/(max(inflate_distance,dist_push) - inflate_distance + 1e-6))) max_guid_force = 0.6*max_guid_force + 0.4*min(3,1/(max(inflate_distance,dist_push) - inflate_distance + 1e-6));
+		
+		if (obs_angle < M_PI/6){
+			double force = cos(obs_angle) * min(3,1/(max(inflate_distance,dist_push) - inflate_distance + 1e-6) - 1/(sensor_max_range-inflate_distance));
+			guide_force += current_vel.cross((-uav2obs).cross(current_vel)) / pow(current_vel_norm,2) / dist_push * force; // or / pow(dist_push,2)
+			
+			if (max_guide_force<force) max_guide_force = force;
+		}
+        obstacles.push_back(p3d);
     }
 
     //　平均排斥力
@@ -169,22 +165,28 @@ int APF::compute_force(Eigen::Vector3d &goal, Eigen::Vector3d &desired_vel)
     {
         repulsive_force=repulsive_force/count; //obstacles.size();
     }
+    
 	if(count==int(obstacles.size()))
 	{
-		guid_force=Eigen::Vector3d(0.0,0.0,0.0);
+		guide_force=Eigen::Vector3d(0.0,0.0,0.0);
 	}else{
-		double guid_force_norm = guid_force.norm();
-		if(guid_force_norm<1e-6) 
-			guid_force += Eigen::Vector3d(current_vel(1),-current_vel(0),current_vel(2))/current_vel_norm*1e-6;
-		guid_force = k_push*max_guid_force*guid_force/guid_force.norm();
+		double guide_force_norm = guide_force.norm();
+		if(guide_force_norm<1e-6) 
+			guide_force += uav2goal;
+		guide_force = max_guide_force*guide_force/guide_force.norm();
 	}
 
     // 地面排斥力
     if (current_pos[2] <2*ground_safe_height)
 		repulsive_force += Eigen::Vector3d(0.0, 0.0, 1.0) * k_push * (1/max(max(ground_safe_height,current_pos[2]) - ground_safe_height, 1e-6) - 1/(ground_safe_height));
 
+    if(dist_att<1.0)
+    {
+        repulsive_force *= pow(dist_att,2);  // to gaurantee to reach the goal.
+        guide_force *= pow(dist_att,2);  // to gaurantee to reach the goal.
+    }
     // 合力
-    desired_vel = 0.3*repulsive_force + 0.4*attractive_force + 0.3*guid_force; // ENU frame
+    desired_vel = 0.3*repulsive_force + 0.4*attractive_force + 0.3*guide_force; // ENU frame
 
     if(is_2D)
         desired_vel[2] = 0.0;
@@ -195,10 +197,10 @@ int APF::compute_force(Eigen::Vector3d &goal, Eigen::Vector3d &desired_vel)
 	desired_vel = 0.5*last_desired_vel + 0.5*desired_vel;
     last_desired_vel = desired_vel;
     
-	cout << "guid_force: " << guid_force(0) << "," << guid_force(1) << "," << guid_force(2) << endl;
-	cout << "repulsive_force: " << repulsive_force(0) << "," << repulsive_force(1) << "," << repulsive_force(2) << endl;
-	cout << "attractive_force: " << attractive_force(0) << "," << attractive_force(1) << "," << attractive_force(2) << endl;
-	cout << "desired_vel: " << desired_vel(0) << "," << desired_vel(1) << "," << desired_vel(2) << endl;
+	cout << "guide_force: " << max_guide_force << endl;
+	cout << "repulsive_force: " << repulsive_force.norm() << endl;
+	cout << "attractive_force: " << attractive_force.norm() << endl;
+	cout << "desired_vel: " << desired_vel.norm() << endl;
 	cout << " " << endl;
 	
     local_planner_state =1;  //成功规划， 安全

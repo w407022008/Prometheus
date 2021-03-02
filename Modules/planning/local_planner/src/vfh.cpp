@@ -41,22 +41,25 @@ double normal(double input, double std)
 void VFH::init(ros::NodeHandle& nh)
 {
     has_local_map_ = false;
+    has_odom_ = false;
+    has_best_dir = false;
 
-    nh.param("local_planner/ground_height", ground_height, 0.1);  // 地面高度
-    nh.param("local_planner/max_planning_vel", limit_v_norm, 0.4);
-//    nh.param("vfh/goalWeight", goalWeight, 1.0); // 目标权重
-//    nh.param("vfh/obstacle_weight", obstacle_weight, 1.0); // 障碍物权重
-    nh.param("local_planner/sensor_max_range", sensor_max_range, 3.0);  // 探测最大距离
-    nh.param("local_planner/inflate_distance", inflate_distance, 0.50);  // 障碍物影响距离
-    nh.param("local_planner/safe_distance", safe_distance, 0.2); // 安全停止距离
+	nh.param("local_planner/vfh_guide_point", vfh_guide_point, false);	// 是否生成VFH指导点
+    nh.param("local_planner/ground_height", ground_height, 0.1);		// 地面高度
+    nh.param("local_planner/ceil_height", ceil_height, 5.0);			// 天花板高度
+    nh.param("local_planner/max_planning_vel", limit_v_norm, 0.4);		// 最大飞行速度
+    nh.param("local_planner/sensor_max_range", sensor_max_range, 3.0);	// 最大探测距离
+    nh.param("local_planner/inflate_distance", inflate_distance, 0.50);	// 障碍物影响距离
+    nh.param("local_planner/safe_distance", safe_distance, 0.2);		// 安全停止距离
     inflate_plus_safe_distance = safe_distance + inflate_distance;
-    // TRUE代表2D平面规划及搜索,FALSE代表3D 
-    nh.param("local_planner/is_2D", is_2D, false); 
-    nh.param("vfh/isCylindrical", isCylindrical, false); 
-    nh.param("vfh/isSpherical", isSpherical, false); 
-    if(!is_2D && !isCylindrical && !isSpherical) isSpherical = true;
-    nh.param("vfh/h_cnt", Hcnt, 180); // 直方图横向个数(偶数)
-    nh.param("vfh/v_cnt", Vcnt, 90); // 直方图纵向个数(偶数)
+    nh.param("local_planner/is_2D", is_2D, false); 						// 是否2D平面规划
+    nh.param("vfh/isCylindrical", isCylindrical, false); 				// 3D规划，是否柱面建图
+    nh.param("vfh/isSpherical", isSpherical, false); 					// 3D规划，是否球面建图
+    if(!is_2D && !isCylindrical && !isSpherical) isSpherical = true;	// 默认球面建图
+    if(is_2D) {isCylindrical=false; isSpherical=false;}
+    if(isCylindrical || isSpherical) is_2D=false;
+    nh.param("vfh/h_cnt", Hcnt, 180); 									// 直方图横向个数(偶数)
+    nh.param("vfh/v_cnt", Vcnt, 90); 									// 直方图纵向个数(偶数)
     
     Hres = 2*M_PI/Hcnt;
     if(isSpherical)
@@ -98,31 +101,17 @@ void VFH::set_odom(nav_msgs::Odometry cur_odom)
 
 int VFH::compute_force(Eigen::Vector3d  &goal, Eigen::Vector3d &desired_vel)
 {
-    // 0 for not init; 1 for safe; 2 for ok but dangerous
-    int local_planner_state=0;  
-    int safe_cnt=0;
-
     if(!has_local_map_|| !has_odom_){
     	cout << "[Err] Check map input and odom input!" << endl;
         return 0;
 	}
     if ((int)latest_local_pcl_.points.size() == 0) 
 	    cout << "[Wrn] no point cloud" << endl;
-
+	    
     if (isnan(goal(0)) || isnan(goal(1)) || isnan(goal(2))){
     	cout << "[Err] Goal Unkown!" << endl;
         return 0;
 	}
-
-    // reset the Histogram
-    if(is_2D)
-		for(int i=0; i<Hcnt; i++)
-		    Histogram_2d[i] = sensor_max_range;
-	else
-		for(int i=0; i<Vcnt; i++)
-			for(int j=0; j<Hcnt; j++)
-				Histogram_3d[i][j] = sensor_max_range;
-
 
     // 状态量
     std::chrono::time_point<std::chrono::system_clock> start, end; 
@@ -133,14 +122,48 @@ int VFH::compute_force(Eigen::Vector3d  &goal, Eigen::Vector3d &desired_vel)
     current_pos[0] = cur_odom_.pose.pose.position.x;
     current_pos[1] = cur_odom_.pose.pose.position.y;
     current_pos[2] = cur_odom_.pose.pose.position.z;
+    if (current_pos[2]>ceil_height || current_pos[2]<ground_height){
+    	cout << "[Err] Height is not in range!" << endl;
+        return 0;
+	}
     Eigen::Vector3d current_vel;
     current_vel[0] = cur_odom_.twist.twist.linear.x;
     current_vel[1] = cur_odom_.twist.twist.linear.y;
     current_vel[2] = cur_odom_.twist.twist.linear.z;
     Eigen::Vector3d uav2goal = goal - current_pos;
 
+    // reset the Histogram
+    // max sensor range
+    if(is_2D)
+		for(int i=0; i<Hcnt; i++)
+		    Histogram_2d[i] = sensor_max_range;
+	else
+		for(int i=0; i<Vcnt; i++)
+			for(int j=0; j<Hcnt; j++)
+				Histogram_3d[i][j] = sensor_max_range;
+	// virtual ground
+	if(isSpherical)
+		for(int i=0; i<acos((current_pos[2]-ground_height)/sensor_max_range)/Vres; i++)
+			for(int j=0; j<Hcnt; j++)
+				Histogram_3d[i][j] = min((current_pos[2]-ground_height)/cos((i+0.5)*Vres),sensor_max_range);
+	else if(isCylindrical)
+		for(int i=0; i<Vcnt/2-(current_pos[2]-ground_height)/Vres; i++)
+			for(int j=0; j<Hcnt; j++)
+				Histogram_3d[i][j] = 0.0;
+	// virtual ciel
+	if(isSpherical)
+		for(int i=Vcnt-1; i>Vcnt-1-acos((ceil_height-current_pos[2])/sensor_max_range)/Vres; i--)
+			for(int j=0; j<Hcnt; j++)
+				Histogram_3d[i][j] = min((ceil_height-current_pos[2])/cos((i+0.5)*Vres),sensor_max_range);
+	else if(isCylindrical)
+		for(int i=Vcnt-1; i<Vcnt-1-(ceil_height-current_pos[2])/Vres; i--)
+			for(int j=0; j<Hcnt; j++)
+				Histogram_3d[i][j] = 0.0;
 
 
+    // 0 for not init; 1 for safe; 2 for ok but dangerous
+    int local_planner_state=0;  
+    int safe_cnt=0;
 
 //    Eigen::Quaterniond cur_rotation_local_to_global(cur_odom_.pose.pose.orientation.w, cur_odom_.pose.pose.orientation.x, cur_odom_.pose.pose.orientation.y, cur_odom_.pose.pose.orientation.z); 
 //    Eigen::Matrix<double,3,3> rotation_mat_local_to_global = cur_rotation_local_to_global.toRotationMatrix();
@@ -258,12 +281,13 @@ int VFH::compute_force(Eigen::Vector3d  &goal, Eigen::Vector3d &desired_vel)
 		}
 		
 		if (best_idx == -1)
-			desired_vel = Eigen::Vector3d(0.0,0.0,0.0);
+			best_dir = Eigen::Vector3d(0.0,0.0,0.0);
 		else {
+			has_best_dir = true;
 			double best_heading  = (best_idx + 0.5)* Hres;
-			desired_vel(0) = cos(best_heading)*limit_v_norm;
-			desired_vel(1) = sin(best_heading)*limit_v_norm;
-			desired_vel(2) = 0.0;
+			best_dir(0) = cos(best_heading);
+			best_dir(1) = sin(best_heading);
+			best_dir(2) = 0.0;
 		}
 	} else if (isCylindrical){
 		double goal_height_v = min(double(Vcnt),max(0.0,Vcnt/2 + uav2goal(2)/Vres)); // 0 ~ Vcnt
@@ -313,14 +337,15 @@ int VFH::compute_force(Eigen::Vector3d  &goal, Eigen::Vector3d &desired_vel)
 			}
 			
 		if (best_idx[0] == -1 || best_idx[1] == -1)
-			desired_vel = Eigen::Vector3d(0.0,0.0,0.0);
+			best_dir = Eigen::Vector3d(0.0,0.0,0.0);
 		else {
+			has_best_dir = true;
 			double best_height_v  = fabs((best_idx[0] + 0.5) - current_height_v)/Vcnt*2; // 0 ~ 1
 //			cout << "best_height_v: " << best_height_v << endl;
 			double best_heading_h  = (best_idx[1] + 0.5)* Hres; // 0 ~ 2*pi
-			desired_vel(0) = normal(best_height_v,0.8)*cos(best_heading_h)*limit_v_norm; // adjustable: 0.8
-			desired_vel(1) = normal(best_height_v,0.8)*sin(best_heading_h)*limit_v_norm;
-			desired_vel(2) = sign((best_idx[0] + 0.5) - current_height_v) * sqrt(1-pow(normal(best_height_v,0.8),2))*limit_v_norm;
+			best_dir(0) = normal(best_height_v,0.8)*cos(best_heading_h); // adjustable: 0.8
+			best_dir(1) = normal(best_height_v,0.8)*sin(best_heading_h);
+			best_dir(2) = sign((best_idx[0] + 0.5) - current_height_v) * sqrt(1-pow(normal(best_height_v,0.8),2));
 		}
 
 	} else if (isSpherical){
@@ -372,13 +397,14 @@ int VFH::compute_force(Eigen::Vector3d  &goal, Eigen::Vector3d &desired_vel)
 			}
 			
 		if (best_idx[0] == -1 || best_idx[1] == -1)
-			desired_vel = Eigen::Vector3d(0.0,0.0,0.0);
+			best_dir = Eigen::Vector3d(0.0,0.0,0.0);
 		else {
+			has_best_dir = true;
 			double best_heading_v  = (best_idx[0] + 0.5)* Vres-M_PI/2; // -pi/2 ~ pi/2
 			double best_heading_h  = (best_idx[1] + 0.5)* Hres; // 0 ~ 2*pi
-			desired_vel(0) = cos(best_heading_v)*cos(best_heading_h)*limit_v_norm;
-			desired_vel(1) = cos(best_heading_v)*sin(best_heading_h)*limit_v_norm;
-			desired_vel(2) = sin(best_heading_v)*limit_v_norm;
+			best_dir(0) = cos(best_heading_v)*cos(best_heading_h);
+			best_dir(1) = cos(best_heading_v)*sin(best_heading_h);
+			best_dir(2) = sin(best_heading_v);
 		}
 	}
 
@@ -406,9 +432,10 @@ int VFH::compute_force(Eigen::Vector3d  &goal, Eigen::Vector3d &desired_vel)
     else
         local_planner_state =1;  //成功规划， 安全
         
-    // 地面排斥
-    if (current_pos[2] <2*ground_height && current_vel(2)<0.0)
-		desired_vel(2) += (1/max(max(ground_height,current_pos[2]) - ground_height, 1e-6) - 1/(ground_height));
+    desired_vel = best_dir * limit_v_norm;
+    // 地面排斥力
+//    if (current_pos[2] <2*ground_height && current_vel(2)<0.1)
+//		desired_vel(2) += (1/max(max(ground_height,current_pos[2]) - ground_height, 1e-6) - 1/(ground_height));
 
     exec_num++;
 	end = std::chrono::system_clock::now();
@@ -418,6 +445,11 @@ int VFH::compute_force(Eigen::Vector3d  &goal, Eigen::Vector3d &desired_vel)
         printf("VFH calculation takes %f [us].\n", elapsed_seconds.count()/10*1e6);
         exec_num=0;
     }
+    
+    has_local_map_ = false;
+    has_odom_ = false;
+    has_best_dir = false;
+    
     return local_planner_state;
 }
 

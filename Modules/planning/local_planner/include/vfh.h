@@ -31,23 +31,20 @@ class VFH: public local_planning_alg
 {
 private:
     //　参数
-    double inflate_distance;
-    double sensor_max_range;
-    double safe_distance;
-    double inflate_plus_safe_distance;
-    double ground_height;
+    double sensor_max_range, inflate_distance, safe_distance, inflate_plus_safe_distance;
+    double ground_height, ceil_height;
     double limit_v_norm;
+    Eigen::Vector3d best_dir;
+    
     double  Hres;
     int Hcnt;  // 直方图横向个数
     double  Vres;
     int Vcnt;  // 直方图纵向个数
 
-/*    double goalWeight, obstacle_weight;*/
-
 	// bool 参数
-    bool has_local_map_;
-    bool has_odom_;
-    bool is_2D,isCylindrical,isSpherical;
+	bool vfh_guide_point;
+    bool has_local_map_, has_odom_, has_best_dir;
+    bool is_2D, isCylindrical, isSpherical;
 
 
 	// Histogram
